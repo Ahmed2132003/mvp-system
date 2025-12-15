@@ -6,8 +6,9 @@ WORKDIR /app
 # Copy requirements
 COPY requirements.txt .
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies (من requirements + daphne لو مش موجودة)
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir daphne
 
 # Copy the entire backend project
 COPY . .
@@ -18,5 +19,5 @@ ENV PYTHONPATH=/app
 # Expose port
 EXPOSE 8000
 
-# Run server
-CMD ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && python manage.py runserver 0.0.0.0:8000"]
+# Run server via ASGI (Daphne)
+CMD ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p 8000 backend.asgi:application"]

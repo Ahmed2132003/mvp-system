@@ -1,0 +1,74 @@
+# ------------------------------
+# Django Backend Commands
+# ------------------------------
+
+# تشغيل المشروع
+docker compose up
+
+# تشغيل بالخلفية
+docker compose up -d
+
+# إعادة بناء الكونتينرات
+docker compose up --build
+
+# تنفيذ أوامر داخل backend
+docker compose exec backend python manage.py migrate
+docker compose exec backend python manage.py makemigrations
+docker compose exec backend python manage.py collectstatic
+
+# الدخول لداخل backend container
+docker compose exec backend bash
+
+# إعادة تشغيل backend
+docker compose restart backend
+
+# إيقاف وتشغيل كل الكونتينرات
+docker compose down
+docker compose up
+
+# حذف الكونتينرات + الشبكات
+docker compose down --volumes --remove-orphans
+
+
+# ------------------------------
+# Frontend Commands
+# ------------------------------
+
+# تشغيل frontend
+docker compose up frontend
+docker compose up -d frontend
+
+# بناء frontend container
+docker compose build frontend
+
+# تنفيذ أوامر داخل frontend
+docker compose exec frontend npm install
+docker compose exec frontend npm run build
+docker compose exec frontend npm run dev
+
+# الدخول إلى frontend container
+docker compose exec frontend bash
+
+
+# ------------------------------
+# Docker General Commands
+# ------------------------------
+
+# عرض الكونتينرات
+docker ps
+docker ps -a
+
+# حذف Container
+docker rm container-name
+
+# حذف Image
+docker rmi image-name
+
+# حذف شامل للدوكر (خطير)
+docker system prune -a
+
+# تنظيف شامل (كل الكونتينرات + الصور)
+docker stop $(docker ps -aq)
+docker rm $(docker ps -aq)
+docker rmi $(docker images -q)
+docker volume prune -f

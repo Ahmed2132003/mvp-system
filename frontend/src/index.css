@@ -1,3 +1,28 @@
+/* src/index.css أو أي ملف global */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: 30 102 245;        
+    --color-primary-light: 100 150 255; /* أزرق فاتح للهوفر */
+    --color-primary-dark: 0 68 204;     /* أزرق غامق للضغط */
+    --color-bg: 245 247 250;            /* خلفية فاتحة جداً */
+    --color-surface: 255 255 255;       /* كروت وبطاقات */
+    --color-border: 229 231 235;         /* حدود خفيفة */
+    --color-text: 31 41 55;              /* نصوص رئيسية */
+    --color-text-light: 75 85 99;        /* نصوص ثانوية */
+    --color-success: 34 197 94;
+    --color-danger: 239 68 68;
+    --color-warning: 251 146 60;
+  }
+
+  .dark {
+    --color-bg: 17 24 39;
+    --color-surface: 31 41 55;
+    --color-border: 55 65 81;
+    --color-text: 229 231 235;
+    --color-text-light: 156 163 175;
+  }
+}

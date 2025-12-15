@@ -1,0 +1,32 @@
+<!-- templates/attendance/qr_redirect.html -->
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>جاري...</title></head><body>
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const payload = {
+    employee_id: params.get('emp'),
+    store_id: params.get('store'),
+    action: params.get('action') || 'checkin',
+    location: null
+  };
+
+  fetch('/api/attendance/qr-check/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(d => {
+    document.body.innerHTML = `
+      <h1 style="text-align:center;margin-top:50px;font-family:Arial">
+        ${d.status === 'success' ? 'تم تسجيل الحضور بنجاح' : 'خطأ'}
+      </h1>
+      <p style="text-align:center;font-size:18px">
+        ${d.message || d.error}
+        ${d.is_late ? '<br>متأخر ' + d.late_minutes + ' دقيقة' : ''}
+      </p>
+    `;
+  })
+  .catch(() => document.body.innerHTML = "<h1>فشل في الاتصال</h1>");
+</script>
+</body></html>

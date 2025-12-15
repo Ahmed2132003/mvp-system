@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   db:
     image: postgres:15-alpine
@@ -14,7 +16,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
     restart: unless-stopped
 
   backend:
@@ -25,42 +32,91 @@ services:
       sh -c "
         python manage.py migrate --noinput &&
         python manage.py collectstatic --noinput &&
-        python manage.py runserver 0.0.0.0:8000
+        daphne -b 0.0.0.0 -p 8000 backend.asgi:application
       "
     volumes:
       - ./backend:/app
       - static_volume:/app/staticfiles
+
+    # ✅ ده اللي كان ناقص
     ports:
       - "8000:8000"
+
+    # (اختياري) ممكن تسيب expose أو تشيله مش هيفرق
+    # expose:
+    #   - "8000"
+
     environment:
-      - DEBUG=${DEBUG:-True}
-      - SECRET_KEY=${SECRET_KEY:-your-super-secret-key-change-in-production}
-      - POSTGRES_DB=${POSTGRES_DB:-mvp_db}
-      - POSTGRES_USER=${POSTGRES_USER:-mvp_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mvp_pass}
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-mvp_user}:${POSTGRES_PASSWORD:-mvp_pass}@db:5432/${POSTGRES_DB:-mvp_db}
+      - DEBUG=True
+      - SECRET_KEY=dev-secret
+      - DATABASE_URL=postgresql://mvp_user:mvp_pass@db:5432/mvp_db
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - SITE_URL=http://localhost:3000
     depends_on:
-      db:
-        condition: service_healthy
+      - db
+      - redis
     restart: unless-stopped
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    command: npm run dev -- --host 0.0.0.0 --port 3000
+    command: npm run dev -- --host 0.0.0.0 --port 5173
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    ports:
-      - "3000:3000"
+    expose:
+      - "5173"
     environment:
       - NODE_ENV=development
-      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+      - VITE_API_BASE_URL=/api/v1
+      - PORT=5173
     depends_on:
       - backend
     restart: unless-stopped
 
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - static_volume:/static
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A backend.celery worker -l info
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+      - backend
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - DEBUG=True
+    restart: unless-stopped
+
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: celery -A backend.celery beat -l info
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
+      - backend
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    restart: unless-stopped
+
 volumes:
   postgres_data:
+  redis_data:
   static_volume:
