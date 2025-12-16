@@ -93,7 +93,7 @@ function fmtDateTime(v) {
   if (!v) return '—';
   try {
     const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return String(v);
+if (Number.isNaN(d.getTime())) return String(v);
     return d.toLocaleString('ar-EG', {
       year: 'numeric',
       month: '2-digit',
@@ -106,6 +106,15 @@ function fmtDateTime(v) {
   }
 }
 
+function fmtMinutes(min) {
+  if (!min) return '0 د';
+  const h = Math.floor(min / 60);
+  const m = Math.floor(min % 60);
+  if (!h) return `${m} د`;
+  if (!m) return `${h} س`;
+  return `${h} س ${m} د`;
+}
+
 export default function EmployeeAttendance() {
   const [mode, setMode] = useState('scan'); // 'scan' | 'show_qr'
 
@@ -115,9 +124,26 @@ export default function EmployeeAttendance() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  const [status, setStatus] = useState(null);
+  const [statusLoading, setStatusLoading] = useState(false);
+
   // ✅ بدل store: هنجيب بيانات الموظف الحالي + QR بتاعه
   const [meAttendance, setMeAttendance] = useState(null);
   const [meLoading, setMeLoading] = useState(true);
+
+  const fetchMyStatus = useCallback(async () => {
+    try {
+      setStatusLoading(true);
+      const res = await api.get('/attendance/my-status/');
+      setStatus(res.data);
+    } catch (e) {
+      setStatus(null);
+      const msg = e?.response?.data?.detail || 'تعذر جلب ملخص الحضور.';
+      notifyError(msg);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, []);
 
   const fetchMyAttendanceQr = useCallback(async () => {
     try {
@@ -139,7 +165,8 @@ export default function EmployeeAttendance() {
 
   useEffect(() => {
     fetchMyAttendanceQr();
-  }, [fetchMyAttendanceQr]);
+    fetchMyStatus();
+  }, [fetchMyAttendanceQr, fetchMyStatus]);
 
   const handleDecode = async (raw) => {
     const normalized = normalizeQrRaw(raw);
@@ -181,9 +208,8 @@ export default function EmployeeAttendance() {
       const res = await api.post('/attendance/check/', payload);
 
       console.log('[Attendance] Response:', res?.status, res?.data);
-
       setResult({
-        status: res.data.status, // checkin | checkout
+        status: res.data.status, // checkin | checkout␊
         message: res.data.message,
         work_date: res.data.work_date,
         check_in: res.data.check_in,
@@ -193,6 +219,8 @@ export default function EmployeeAttendance() {
         penalty: res.data.penalty,
         duration_minutes: res.data.duration_minutes,
       });
+
+      fetchMyStatus();
 
       notifySuccess(res.data.message || 'تم تسجيل العملية بنجاح');
     } catch (err) {
@@ -241,7 +269,6 @@ export default function EmployeeAttendance() {
               امسح QR الخاص بك لتسجيل الدخول أو الانصراف (التوقيت والموقع يتسجلوا تلقائيًا).
             </p>
           </div>
-
           <Link
             to="/dashboard"
             className="text-xs md:text-sm px-3 py-1.5 rounded-xl border border-gray-200 hover:bg-gray-50"
@@ -250,6 +277,60 @@ export default function EmployeeAttendance() {
           </Link>
         </header>
 
+        {/* ✅ ملخص سريع */}
+        <section className="grid md:grid-cols-2 gap-4 bg-gray-50 border border-gray-100 rounded-2xl p-4">
+          <div className="space-y-1 text-sm">
+            <p className="text-xs font-semibold text-gray-700 flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+              بيانات الموظف الحالي
+            </p>
+            {statusLoading ? (
+              <p className="text-xs text-gray-500">جاري تحميل الملخص...</p>
+            ) : status ? (
+              <>
+                <p className="text-sm font-semibold text-gray-900">{status.employee?.name || '—'}</p>
+                <p className="text-xs text-gray-600">
+                  الفرع: {status.employee?.store_name || '—'} (ID: {status.employee?.store || '—'})
+                </p>
+                <p className="text-xs text-gray-600">الراتب الأساسي: {status.employee?.salary || 0} ج.م</p>
+
+                {status.active_log ? (
+                  <div className="mt-2 text-[11px] text-blue-700 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                    جلسة نشطة منذ: {fmtDateTime(status.active_log.check_in)}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
+                    لا توجد جلسة مفتوحة الآن.
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-red-600">تعذر تحميل بياناتك.</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-center text-xs">
+            <div className="rounded-2xl border border-gray-200 bg-white p-3">
+              <p className="text-gray-500">حضور هذا الشهر</p>
+              <p className="text-lg font-bold text-gray-900">{status?.month?.present_days ?? '—'} يوم</p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-white p-3">
+              <p className="text-gray-500">الغياب المحتسب</p>
+              <p className="text-lg font-bold text-gray-900">{status?.month?.absent_days ?? '—'} يوم</p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-white p-3">
+              <p className="text-gray-500">إجمالي التأخير</p>
+              <p className="text-lg font-bold text-gray-900">{fmtMinutes(status?.month?.late_minutes || 0)}</p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-white p-3">
+              <p className="text-gray-500">الجزاءات</p>
+              <p className="text-lg font-bold text-gray-900">{status?.month?.penalties || 0} ج.م</p>
+              <p className="text-[11px] text-emerald-700 mt-1">
+                صافي تقديري: {status?.month?.estimated_net_salary ?? 0} ج.م
+              </p>
+            </div>
+          </div>
+        </section>
         {/* ✅ Mode Toggle */}
         <section className="flex items-center justify-between gap-3 bg-gray-50 rounded-2xl px-4 py-3">
           <div className="flex items-center gap-2">

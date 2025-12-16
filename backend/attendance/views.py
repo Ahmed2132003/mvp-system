@@ -1,10 +1,13 @@
+import calendar
+from datetime import date
+
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.utils import timezone
 
-from .models import AttendanceLog
+from .models import AttendanceLog, LeaveRequest
 from .serializers import AttendanceLogSerializer
 
 
@@ -101,7 +104,114 @@ def attendance_check(request):
         "work_date": active_log.work_date,
         "duration_minutes": active_log.duration_minutes,
     }, status=200)
+    
+def _month_range(target: date):
+    """Return (start_date, end_date) covering the month of *target*."""
 
+    start = target.replace(day=1)
+    _, last_day = calendar.monthrange(start.year, start.month)
+    end = start.replace(day=last_day)
+    return start, end
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_attendance_status(request):
+    """
+    إرجاع ملخص سريع للموظف الحالي:
+    - بيانات الموظف والفرع
+    - آخر جلسة حضور/انصراف نشطة
+    - ملخص الشهر (حضور، غياب، إجازات، تأخير، غرامات)
+    """
+
+    employee = getattr(request.user, "employee", None)
+    if not employee:
+        return Response({"detail": "لا يوجد ملف موظف."}, status=404)
+
+    today = timezone.localdate()
+
+    # allow overriding month via query param YYYY-MM
+    month_str = request.GET.get("month")
+    try:
+        target_month = date.fromisoformat(f"{month_str}-01") if month_str else today.replace(day=1)
+    except Exception:
+        target_month = today.replace(day=1)
+
+    month_start, month_end = _month_range(target_month)
+
+    # نطاق الأيام حتى اليوم الحالي لتفادي المستقبل
+    month_end = min(month_end, today)
+
+    logs_qs = AttendanceLog.objects.filter(
+        employee=employee, work_date__range=(month_start, month_end)
+    )
+
+    present_days = set(
+        logs_qs.exclude(check_in__isnull=True).values_list("work_date", flat=True)
+    )
+
+    total_minutes = sum(log.duration_minutes or 0 for log in logs_qs)
+    total_late = sum(log.late_minutes or 0 for log in logs_qs)
+    total_penalties = sum(float(log.penalty_applied or 0) for log in logs_qs)
+
+    # إجازات معتمدة داخل نفس الشهر
+    leaves_qs = LeaveRequest.objects.filter(
+        employee=employee,
+        status__iexact="APPROVED",
+        date_from__lte=month_end,
+        date_to__gte=month_start,
+    )
+
+    leave_days = set()
+    for leave in leaves_qs:
+        start = max(leave.date_from, month_start)
+        end = min(leave.date_to, month_end)
+        cur = start
+        while cur <= end:
+            leave_days.add(cur)
+            cur += timezone.timedelta(days=1)
+
+    # الأيام المتوقع حضورها (بعد تاريخ التعيين لو موجود)
+    expected_start = max(month_start, employee.hire_date) if employee.hire_date else month_start
+    expected_days = set()
+    cur_day = expected_start
+    while cur_day <= month_end:
+        expected_days.add(cur_day)
+        cur_day += timezone.timedelta(days=1)
+
+    # الغياب = المتوقع - حضور - إجازات
+    absent_days = len(expected_days - present_days - leave_days)
+
+    active_log = AttendanceLog.objects.active_for_employee(employee)
+    today_log = (
+        logs_qs.filter(work_date=today)
+        .order_by("-check_in")
+        .first()
+    )
+
+    return Response(
+        {
+            "employee": {
+                "id": employee.id,
+                "name": employee.user.name or employee.user.email,
+                "store": employee.store_id,
+                "store_name": getattr(employee.store, "name", None),
+                "salary": employee.salary,
+            },
+            "active_log": AttendanceLogSerializer(active_log).data if active_log else None,
+            "today_log": AttendanceLogSerializer(today_log).data if today_log else None,
+            "month": {
+                "start": month_start,
+                "end": month_end,
+                "present_days": len(present_days),
+                "leave_days": len(leave_days),
+                "absent_days": absent_days,
+                "total_minutes": total_minutes,
+                "late_minutes": total_late,
+                "penalties": total_penalties,
+                "estimated_net_salary": float((employee.salary or 0) - total_penalties),
+            },
+        }
+    )
 
 @api_view(["GET"])
 @permission_classes([AllowAny])
