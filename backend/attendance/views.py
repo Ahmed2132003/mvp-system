@@ -36,9 +36,8 @@ def attendance_check(request):
     - لو فيه session مفتوحة -> يعمل check-out
 
     ✅ ملاحظة أمنية:
-    employee الحقيقي يؤخذ من JWT، وليس من QR.
-    employee_id لو اتبعت هنستخدمه للتحقق فقط.
-    """
+    employee الحقيقي يؤخذ من JWT الخاص بالمستخدم.
+    """    
     if not hasattr(request.user, "employee") or not request.user.employee:
         return Response({"detail": "هذا المستخدم لا يملك ملف موظف."}, status=404)
 
@@ -59,7 +58,7 @@ def attendance_check(request):
     ip = request.META.get("REMOTE_ADDR")
     user_agent = (request.META.get("HTTP_USER_AGENT") or "")[:500]
 
-    # ✅ الموقع إجباري للحضور/الانصراف عبر QR
+    # ✅ الموقع إجباري للحضور/الانصراف عبر التطبيق
     if not isinstance(gps, dict) or not gps.get("lat") or not gps.get("lng"):
         return Response(
             {
@@ -67,8 +66,7 @@ def attendance_check(request):
                 "message": "فعّل الموقع أولاً لتسجيل الحضور أو الانصراف.",
             },
             status=400,
-        )
-        
+        )       
     now = timezone.now()
     work_date = timezone.localtime(now).date()
 
@@ -90,12 +88,12 @@ def attendance_check(request):
                 employee=employee,
                 check_in=now,
                 work_date=work_date,
-                method="QR",
+                method="MANUAL",
                 gps=gps,
                 location=location,
                 ip_address=ip,
                 user_agent=user_agent,
-            )
+            )            
         except ValidationError as exc:
             return Response(
                 {
@@ -114,23 +112,27 @@ def attendance_check(request):
             "is_late": log.is_late,
             "late_minutes": log.late_minutes,
             "penalty": float(log.penalty_applied),
+            "location": log.location,
+            "gps": log.gps,
         }, status=200)
-
+        
     active_log.check_out = now
     active_log.gps = gps or active_log.gps
     active_log.location = location or active_log.location
     active_log.ip_address = ip
     active_log.user_agent = user_agent
     active_log.save()
-    
+
     return Response({
         "status": "checkout",
         "message": "تم تسجيل الانصراف بنجاح",
         "check_out": active_log.check_out,
         "work_date": active_log.work_date,
         "duration_minutes": active_log.duration_minutes,
+        "location": active_log.location,
+        "gps": active_log.gps,
     }, status=200)
-    
+        
 def _month_range(target: date):
     """Return (start_date, end_date) covering the month of *target*."""
 
