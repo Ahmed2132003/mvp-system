@@ -3,24 +3,63 @@ import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifySuccess, notifyError } from '../lib/notifications';
 
-function getGeoLocation() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
+const LAST_GPS_KEY = 'attendance:last-gps';
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        resolve({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        });
-      },
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-    );
-  });
+function loadLastGps() {
+  try {
+    const cached = localStorage.getItem(LAST_GPS_KEY);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached);
+    if (parsed?.lat && parsed?.lng) return parsed;
+  } catch (e) {
+    console.warn('[Attendance] Failed to read cached GPS', e);
+  }
+  return null;
 }
 
+function saveLastGps(gps) {
+  try {
+    localStorage.setItem(
+      LAST_GPS_KEY,
+      JSON.stringify({ lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy })
+    );
+  } catch (e) {
+    console.warn('[Attendance] Failed to cache GPS', e);
+  }
+}
+
+async function getGeoLocation() {
+  const requestLocation = () =>
+    new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error('غير مدعوم'));
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+        },
+        (err) => reject(err),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    });
+
+  const cached = loadLastGps();
+
+  try {
+    const live = await requestLocation();
+    saveLastGps(live);
+    return live;
+  } catch (err) {
+    if (cached) {
+      console.warn('[Attendance] Using cached GPS after error:', err);
+      return { ...cached, cached: true };
+    }
+    throw err;
+  }
+}
 // ✅ helper: format ISO datetime nicely
 function fmtDateTime(v) {
   if (!v) return '—';
@@ -73,6 +112,12 @@ export default function EmployeeAttendance() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [status, setStatus] = useState(null);
 
+  const monthly = status?.month || {};
+  const salary = Number(status?.employee?.salary) || 0;
+  const attendanceValue = Number(monthly.attendance_value) || 0;
+  const totalPenalties = Number(monthly.penalties) || 0;
+  const remainingThisMonth = Math.max(0, salary - attendanceValue - totalPenalties);
+
   const fetchMyStatus = useCallback(async () => {
     try {
       setStatusLoading(true);
@@ -100,10 +145,16 @@ export default function EmployeeAttendance() {
     try {
       const location = await getGeoLocation();
       if (!location?.lat || !location?.lng) {
-        throw new Error('يجب تفعيل الموقع لتسجيل الحضور أو الانصراف.');
+        throw new Error('تعذر تحديد موقعك. من فضلك فعّل خدمة الموقع وحاول مرة أخرى.');
       }
 
-      const payload = { gps: location };
+      const gpsPayload = {
+        lat: location.lat,
+        lng: location.lng,
+        accuracy: location.accuracy,
+      };
+      const payload = { gps: gpsPayload };
+      const usedCachedGps = Boolean(location.cached);
       console.log('[Attendance] POST /attendance/check payload:', payload);
 
       const res = await api.post('/attendance/check/', payload);
@@ -120,20 +171,30 @@ export default function EmployeeAttendance() {
         penalty: res.data.penalty,
         duration_minutes: res.data.duration_minutes,
         gps: res.data.gps || payload.gps,
+        usedCachedGps,
       });
 
       fetchMyStatus();
       notifySuccess(res.data.message || 'تم تسجيل العملية بنجاح');
+      if (usedCachedGps) {
+        notifyError('تم استخدام آخر موقع محفوظ. يرجى تفعيل خدمة الموقع لتسجيل موقعك الحالي.');
+      }
     } catch (err) {
       const statusCode = err?.response?.status;
       const data = err?.response?.data;
       console.error('[Attendance] Error:', statusCode, data, err);
 
-      const msg =
+      let msg =
         data?.message ||
         data?.detail ||
         err.message ||
         'حدث خطأ أثناء تسجيل الحضور/الانصراف.';
+
+      if (err?.code === 1) {
+        msg = 'تم رفض إذن الموقع. رجاء تفعيل تحديد الموقع للتسجيل.';
+      } else if (err?.message === 'غير مدعوم') {
+        msg = 'متصفحك لا يدعم تحديد الموقع أو يحتاج إلى تفعيل HTTPS.';
+      }
 
       setError(msg);
 
@@ -259,12 +320,13 @@ export default function EmployeeAttendance() {
             <p className="text-[11px] text-gray-500">عدد الأيام × قيمة اليوم</p>
           </div>
           <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-1">
-            <p className="text-gray-500">خصم الغياب</p>
-            <p className="text-lg font-bold text-red-600">-{status?.month?.absence_penalties?.toFixed?.(2) ?? '0.00'} ج.م</p>
-            <p className="text-[11px] text-gray-500">حسب الغياب من 1 إلى 30 في الشهر</p>
+            <p className="text-gray-500">المتبقي من راتب هذا الشهر</p>
+            <p className="text-lg font-bold text-emerald-700">
+              {remainingThisMonth.toFixed(2)} ج.م
+            </p>
+            <p className="text-[11px] text-gray-500">في حال إكمال الشهر دون غياب إضافي</p>
           </div>
         </section>
-
 
         {/* ✅ زر تسجيل الحضور/الانصراف */}
         <section className="grid md:grid-cols-2 gap-4 items-start">
@@ -347,11 +409,16 @@ export default function EmployeeAttendance() {
                   {result?.is_late && (
                     <div className="text-red-600 mt-2">تنبيه: تم رصد تأخير في هذه العملية. الرجاء الالتزام بموعد الشفت.</div>
                   )}
+                  {result?.usedCachedGps && (
+                    <div className="text-amber-700 mt-2">
+                      تم استخدام آخر موقع محفوظ لعدم القدرة على تحديد موقع جديد. يرجى تفعيل الموقع لتسجيل موقعك الحالي.
+                    </div>
+                  )}
                 </div>
               </div>
-            )}            
+            )}
           </div>
-        </section>
+        </section>        
       </div>
     </div>
   );
