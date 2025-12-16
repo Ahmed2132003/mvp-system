@@ -75,10 +75,12 @@ class AttendanceLog(models.Model):
 
     method = models.CharField(max_length=10, choices=METHOD_CHOICES, default="QR")
 
+    # إحداثيات الموقع القادم من المتصفح (lat/lng/accuracy...)
+    gps = models.JSONField(null=True, blank=True)
     location = models.JSONField(null=True, blank=True)  # {lat, lng, accuracy?}
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(null=True, blank=True)
-
+    
     is_late = models.BooleanField(default=False)
     late_minutes = models.PositiveIntegerField(null=True, blank=True)
     penalty_applied = models.DecimalField(max_digits=8, decimal_places=2, default=0.00)

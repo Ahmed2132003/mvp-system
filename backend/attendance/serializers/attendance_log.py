@@ -26,6 +26,8 @@ class AttendanceLogSerializer(serializers.ModelSerializer):
             "check_in",
             "check_out",
             "method",
+            "gps",
+            "location",
             "duration",
             "is_late",
             "late_minutes",
@@ -35,12 +37,14 @@ class AttendanceLogSerializer(serializers.ModelSerializer):
             "work_date",
             "check_in",
             "check_out",
+            "gps",
+            "location",
             "duration",
             "is_late",
             "late_minutes",
             "penalty_applied",
         ]
-
+        
     def get_duration(self, obj):
         if obj.duration_minutes:
             h = obj.duration_minutes // 60
