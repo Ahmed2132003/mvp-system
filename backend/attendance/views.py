@@ -165,10 +165,6 @@ def my_attendance_status(request):
         target_month = today.replace(day=1)
 
     month_start, month_end = _month_range(target_month)
-
-    # نطاق الأيام حتى اليوم الحالي لتفادي المستقبل
-    month_end = min(month_end, today)
-
     logs_qs = AttendanceLog.objects.filter(
         employee=employee, work_date__range=(month_start, month_end)
     )
@@ -180,7 +176,6 @@ def my_attendance_status(request):
     total_minutes = sum(log.duration_minutes or 0 for log in logs_qs)
     total_late = sum(log.late_minutes or 0 for log in logs_qs)
     total_penalties = sum(float(log.penalty_applied or 0) for log in logs_qs)
-    
     # إجازات معتمدة داخل نفس الشهر
     leaves_qs = LeaveRequest.objects.filter(
         employee=employee,
@@ -212,7 +207,9 @@ def my_attendance_status(request):
     salary = float(employee.salary or 0)
     daily_rate = salary / 30 if salary else 0
     absence_penalties = daily_rate * absent_days
-    
+    attendance_value = daily_rate * len(present_days)
+
+    store_settings = getattr(employee.store, "settings", None)    
     active_log = AttendanceLog.objects.active_for_employee(employee)
     today_log = (
         logs_qs.filter(work_date=today)
@@ -229,6 +226,13 @@ def my_attendance_status(request):
                 "store_name": getattr(employee.store, "name", None),
                 "salary": employee.salary,
             },
+            "shift": {
+                "start": getattr(store_settings, "attendance_shift_start", None),
+                "grace_minutes": getattr(store_settings, "attendance_grace_minutes", None),
+                "penalty_per_15min": float(
+                    getattr(store_settings, "attendance_penalty_per_15min", 0) or 0
+                ),
+            },
             "active_log": AttendanceLogSerializer(active_log).data if active_log else None,
             "today_log": AttendanceLogSerializer(today_log).data if today_log else None,
             "month": {
@@ -241,11 +245,13 @@ def my_attendance_status(request):
                 "late_minutes": total_late,
                 "penalties": total_penalties,
                 "absence_penalties": absence_penalties,
+                "attendance_value": attendance_value,
+                "daily_rate": daily_rate,
                 "estimated_net_salary": float(salary - total_penalties - absence_penalties),
             },
         }
     )
-    
+        
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def qr_redirect(request):

@@ -48,6 +48,17 @@ function fmtMinutes(min) {
   return `${h} س ${m} د`;
 }
 
+function fmtTime(value) {
+  if (!value) return '—';
+  try {
+    const d = new Date(`1970-01-01T${value}`);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return String(value);
+  }
+}
+
 function renderLocation(loc) {
   if (!loc?.lat || !loc?.lng) return '—';
   const accuracy = loc.accuracy ? ` (±${Math.round(loc.accuracy)}م)` : '';
@@ -212,10 +223,48 @@ export default function EmployeeAttendance() {
           </div>
         </section>
 
+        {status?.month?.late_minutes > 0 && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 text-amber-900 text-xs px-4 py-3">
+            تنبيه: لديك إجمالي تأخير {fmtMinutes(status.month.late_minutes)} هذا الشهر. يرجى الالتزام بموعد الشفت لتجنب خصومات إضافية.
+          </div>
+        )}
+
+        {status?.shift?.start && (
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50 text-indigo-900 text-xs px-4 py-3 flex flex-col gap-1">
+            <span className="font-semibold text-sm">موعد الشفت اليومي</span>
+            <span>
+              يبدأ عند: {fmtTime(status.shift.start)} • سماحية التأخير: {status.shift.grace_minutes ?? 0} دقيقة
+            </span>
+            <span className="text-[11px] text-indigo-800">
+              غرامة كل 15 دقيقة تأخير: {status.shift.penalty_per_15min ?? 0} ج.م
+            </span>
+          </div>
+        )}
+
         {/* ✅ تعليمات */}
         <div className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3">
           ملاحظة: الضغط على الزر يقوم تلقائيًا بتحديد ما إذا كنت تحتاج تسجيل حضور أو انصراف بناءً على آخر جلسة.
         </div>
+
+        {/* ✅ ملخص مالي تقديري */}
+        <section className="grid md:grid-cols-3 gap-4 text-xs">
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-1">
+            <p className="text-gray-500">قيمة اليوم الواحد</p>
+            <p className="text-lg font-bold text-gray-900">{status?.month?.daily_rate?.toFixed?.(2) ?? '0.00'} ج.م</p>
+            <p className="text-[11px] text-gray-500">(الراتب ÷ 30 يوماً)</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-1">
+            <p className="text-gray-500">قيمة أيام الحضور</p>
+            <p className="text-lg font-bold text-gray-900">{status?.month?.attendance_value?.toFixed?.(2) ?? '0.00'} ج.م</p>
+            <p className="text-[11px] text-gray-500">عدد الأيام × قيمة اليوم</p>
+          </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-1">
+            <p className="text-gray-500">خصم الغياب</p>
+            <p className="text-lg font-bold text-red-600">-{status?.month?.absence_penalties?.toFixed?.(2) ?? '0.00'} ج.م</p>
+            <p className="text-[11px] text-gray-500">حسب الغياب من 1 إلى 30 في الشهر</p>
+          </div>
+        </section>
+
 
         {/* ✅ زر تسجيل الحضور/الانصراف */}
         <section className="grid md:grid-cols-2 gap-4 items-start">
@@ -280,7 +329,7 @@ export default function EmployeeAttendance() {
                       متأخر: {result.late_minutes || 0} دقيقة • غرامة: {result.penalty || 0} ج.م
                     </p>
                   )}
-
+                  
                   {typeof result.duration_minutes !== 'undefined' &&
                     result.duration_minutes !== null && (
                       <p>المدة بالدقائق: {result.duration_minutes}</p>
@@ -295,9 +344,12 @@ export default function EmployeeAttendance() {
                     : isCheckout
                     ? 'تم تسجيل انصرافك. المرة القادمة سيتم تسجيل الحضور تلقائيًا.'
                     : null}
+                  {result?.is_late && (
+                    <div className="text-red-600 mt-2">تنبيه: تم رصد تأخير في هذه العملية. الرجاء الالتزام بموعد الشفت.</div>
+                  )}
                 </div>
               </div>
-            )}
+            )}            
           </div>
         </section>
       </div>
