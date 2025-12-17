@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifySuccess, notifyError } from '../lib/notifications';
 import { useStore } from '../hooks/useStore';
+import { useAuth } from '../hooks/useAuth';
 
 export default function InventoryPage() {
   const [inventory, setInventory] = useState([]);
@@ -17,6 +18,8 @@ export default function InventoryPage() {
     lowStockCount: 0,
     outOfStockCount: 0,
     totalValue: 0,
+    totalSaleValue: 0,
+    totalCostValue: 0,
   });
 
   const [branches, setBranches] = useState([]);
@@ -24,6 +27,11 @@ export default function InventoryPage() {
   const [branchFilter, setBranchFilter] = useState('');
 
   const { selectedStoreId } = useStore();
+  const { user } = useAuth();
+  const canManageInventory = useMemo(
+    () => user?.is_superuser || ['OWNER', 'MANAGER'].includes(user?.role),
+    [user]
+  );
 
   // حالة مودال تعديل المخزون
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
@@ -48,22 +56,27 @@ export default function InventoryPage() {
       if (statusFilter === 'out') params.status = 'out';
       if (branchFilter) params.branch = branchFilter;
 
-      const res = await api.get('/inventory/', { params });
+      const res = await api.get('/inventory/inventory/', { params });
 
       const results = Array.isArray(res.data) ? res.data : res.data.results || [];
 
       setInventory(results);
 
-      // حساب الـ KPIs
       let totalItems = results.length;
       let lowStockCount = results.filter((row) => row.is_low).length;
       let outOfStockCount = results.filter((row) => row.quantity === 0).length;
       let totalValue = 0;
+      let totalSaleValue = 0;
+      let totalCostValue = 0;
 
       results.forEach((row) => {
         const qty = row.quantity || 0;
-        const unitPrice = row.item?.cost_price ?? row.item?.unit_price ?? 0;
-        totalValue += qty * Number(unitPrice);
+        const unitPrice = Number(row.item?.unit_price ?? 0);
+        const costPrice = Number(row.item?.cost_price ?? 0);
+        const fallbackPrice = row.item?.cost_price ?? row.item?.unit_price ?? 0;
+        totalValue += qty * Number(fallbackPrice);
+        totalSaleValue += qty * unitPrice;
+        totalCostValue += qty * costPrice;
       });
 
       setStats({
@@ -71,7 +84,9 @@ export default function InventoryPage() {
         lowStockCount,
         outOfStockCount,
         totalValue,
-      });
+        totalSaleValue,
+        totalCostValue,
+      });      
     } catch (err) {
       console.error('خطأ في تحميل بيانات المخزون:', err);
       const msg = 'حدث خطأ أثناء تحميل بيانات المخزون';
@@ -151,7 +166,7 @@ export default function InventoryPage() {
       setSavingAdjust(true);
       setAdjustError(null);
 
-      await api.post(`/inventory/${selectedEntry.id}/adjust-stock/`, {
+      await api.post(`/inventory/inventory/${selectedEntry.id}/adjust-stock/`, {        
         movement_type: adjustForm.movement_type,
         change: qty,
         reason: adjustForm.reason || undefined,
@@ -173,30 +188,53 @@ export default function InventoryPage() {
     }
   };
 
-  const kpis = [
-    {
-      id: 1,
-      label: 'عدد أصناف المخزون',
-      value: stats.totalItems,
-    },
-    {
-      id: 2,
-      label: 'أصناف منخفضة المخزون',
-      value: stats.lowStockCount,
-    },
-    {
-      id: 3,
-      label: 'أصناف نفدت بالكامل',
-      value: stats.outOfStockCount,
-    },
-    {
-      id: 4,
-      label: 'قيمة المخزون التقديرية',
-      value: `${stats.totalValue.toLocaleString('ar-EG', {
-        maximumFractionDigits: 0,
-      })} ج.م`,
-    },
-  ];
+  const kpis = useMemo(() => {
+    const base = [
+      {
+        id: 1,
+        label: 'عدد أصناف المخزون',
+        value: stats.totalItems,
+      },
+      {
+        id: 2,
+        label: 'أصناف منخفضة المخزون',
+        value: stats.lowStockCount,
+      },
+      {
+        id: 3,
+        label: 'أصناف نفدت بالكامل',
+        value: stats.outOfStockCount,
+      },
+      {
+        id: 4,
+        label: 'قيمة المخزون التقديرية (حسب آخر سعر معروف)',
+        value: `${stats.totalValue.toLocaleString('ar-EG', {
+          maximumFractionDigits: 0,
+        })} ج.م`,
+      },
+    ];
+
+    if (canManageInventory) {
+      base.push(
+        {
+          id: 5,
+          label: 'إجمالي قيمة البيع الحالية',
+          value: `${stats.totalSaleValue.toLocaleString('ar-EG', {
+            maximumFractionDigits: 0,
+          })} ج.م`,
+        },
+        {
+          id: 6,
+          label: 'إجمالي تكلفة الشراء الحالية',
+          value: `${stats.totalCostValue.toLocaleString('ar-EG', {
+            maximumFractionDigits: 0,
+          })} ج.م`,
+        }
+      );
+    }
+
+    return base;
+  }, [stats, canManageInventory]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -281,13 +319,15 @@ export default function InventoryPage() {
               {branchesLoading && (
                 <span className="text-[11px] text-gray-500">يتم تحميل الفروع...</span>
               )}
-              
+
               <div className="flex items-center gap-2">
                 <div className="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-sm font-bold">
-                  O
+                  {(user?.name || user?.email || 'U')?.slice(0, 1).toUpperCase()}
                 </div>
                 <div className="hidden sm:block">
-                  <p className="text-xs font-semibold text-gray-800">Owner</p>
+                  <p className="text-xs font-semibold text-gray-800">
+                    {user?.role || (user?.is_superuser ? 'Superuser' : 'User')}
+                  </p>
                   <p className="text-[11px] text-gray-500">إدارة المخزون</p>
                 </div>
               </div>
@@ -393,26 +433,48 @@ export default function InventoryPage() {
                             الفرع
                           </th>
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
+                            سعر البيع
+                          </th>
+                          {canManageInventory && (
+                            <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
+                              تكلفة الشراء
+                            </th>
+                          )}
+                          <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             الكمية
                           </th>
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             حد إعادة الطلب
                           </th>
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
+                            إجمالي البيع
+                          </th>
+                          {canManageInventory && (
+                            <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
+                              إجمالي التكلفة
+                            </th>
+                          )}
+                          <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             الحالة
                           </th>
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             آخر تحديث
                           </th>
-                          <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
-                            إجراءات
-                          </th>
+                          {canManageInventory && (
+                            <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
+                              إجراءات
+                            </th>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
                         {inventory.map((row) => {
                           const isOut = row.quantity === 0;
                           const isLow = row.is_low;
+                          const salePrice = Number(row.item?.unit_price ?? 0);
+                          const costPrice = Number(row.item?.cost_price ?? 0);
+                          const saleTotal = salePrice * (row.quantity || 0);
+                          const costTotal = costPrice * (row.quantity || 0);
 
                           let statusLabel = 'مستقر';
                           let statusClass = 'bg-emerald-50 text-emerald-700';
@@ -449,11 +511,41 @@ export default function InventoryPage() {
                                 {row.branch_name || '-'}
                               </td>
                               <td className="py-2 px-2 whitespace-nowrap text-gray-800">
+                                {salePrice.toLocaleString('ar-EG', {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}{' '}
+                                ج.م
+                              </td>
+                              {canManageInventory && (
+                                <td className="py-2 px-2 whitespace-nowrap text-gray-800">
+                                  {costPrice.toLocaleString('ar-EG', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  ج.م
+                                </td>
+                              )}
+                              <td className="py-2 px-2 whitespace-nowrap text-gray-800">
                                 {row.quantity}
                               </td>
                               <td className="py-2 px-2 whitespace-nowrap text-gray-800">
                                 {row.min_stock}
                               </td>
+                              <td className="py-2 px-2 whitespace-nowrap text-gray-800">
+                                {saleTotal.toLocaleString('ar-EG', {
+                                  maximumFractionDigits: 0,
+                                })}{' '}
+                                ج.م
+                              </td>
+                              {canManageInventory && (
+                                <td className="py-2 px-2 whitespace-nowrap text-gray-800">
+                                  {costTotal.toLocaleString('ar-EG', {
+                                    maximumFractionDigits: 0,
+                                  })}{' '}
+                                  ج.م
+                                </td>
+                              )}
                               <td className="py-2 px-2 whitespace-nowrap">
                                 <span
                                   className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] ${statusClass}`}
@@ -464,18 +556,20 @@ export default function InventoryPage() {
                               <td className="py-2 px-2 whitespace-nowrap text-gray-600">
                                 {updatedAt}
                               </td>
-                              <td className="py-2 px-2 whitespace-nowrap">
-                                <button
-                                  type="button"
-                                  className="text-[11px] px-2 py-1 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-700"
-                                  onClick={() => openAdjustModal(row)}
-                                >
-                                  تعديل المخزون
-                                </button>
-                              </td>
+                              {canManageInventory && (
+                                <td className="py-2 px-2 whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    className="text-[11px] px-2 py-1 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-700"
+                                    onClick={() => openAdjustModal(row)}
+                                  >
+                                    تعديل المخزون
+                                  </button>
+                                </td>
+                              )}
                             </tr>
                           );
-                        })}
+                        })}                        
                       </tbody>
                     </table>
                   </div>
@@ -488,7 +582,7 @@ export default function InventoryPage() {
             )}
 
             {/* مودال تعديل المخزون */}
-            {adjustModalOpen && selectedEntry && (
+            {adjustModalOpen && selectedEntry && canManageInventory && (              
               <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
                 <div className="bg-white rounded-2xl shadow-lg w-full max-w-md mx-4 p-5" dir="rtl">
                   <h3 className="text-sm font-semibold text-gray-900 mb-1">

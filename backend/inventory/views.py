@@ -127,10 +127,30 @@ class InventoryViewSet(viewsets.ModelViewSet):
         if not store:
             return Inventory.objects.none()
 
+        # نتأكد إن كل الأصناف في كل الفروع ليها record في جدول الـ Inventory
+        # عشان لو في أصناف مضافة ولسه متعملهاش حركة مخزون، تظهر برضه في الجدول.
+        branch_ids = list(store.branches.values_list('id', flat=True))
+        item_ids = list(store.items.values_list('id', flat=True))
+
+        if branch_ids and item_ids:
+            existing_pairs = set(
+                Inventory.objects.filter(branch__store=store).values_list('item_id', 'branch_id')
+            )
+
+            missing_entries = [
+                Inventory(item_id=item_id, branch_id=branch_id)
+                for item_id in item_ids
+                for branch_id in branch_ids
+                if (item_id, branch_id) not in existing_pairs
+            ]
+
+            if missing_entries:
+                Inventory.objects.bulk_create(missing_entries, ignore_conflicts=True)
+
         qs = Inventory.objects.select_related('item', 'branch').filter(
             branch__store=store
         )
-        
+                
         # فلتر حالة المخزون (status) من الـ query params: low / out
         status_param = self.request.query_params.get('status')
         if status_param == 'low':
