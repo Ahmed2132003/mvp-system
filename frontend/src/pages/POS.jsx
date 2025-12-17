@@ -143,20 +143,12 @@ export default function POS() {
         : res.data.results || [];
 
       setCategoryOptions(results);
-
-      const names = new Set(results.map((cat) => cat.name));
-      items.forEach((item) => {
-        if (item.category_name) {
-          names.add(item.category_name);
-        }
-      });
-      setCategories(Array.from(names));
     } catch (err) {
       console.error('Error loading categories:', err);
     } finally {
       setCategoriesLoading(false);
     }
-  }, [items, selectedStoreId]);
+  }, [selectedStoreId]);
 
   const fetchBranches = useCallback(async () => {
     if (!selectedStoreId) {
@@ -205,14 +197,6 @@ export default function POS() {
         : res.data.results || [];
 
       setItems(results);
-
-      const cats = new Set(categoryOptions.map((cat) => cat.name));
-      results.forEach((item) => {
-        if (item.category && item.category_name) {
-          cats.add(item.category_name);
-        }
-      });
-      setCategories(Array.from(cats));
     } catch (err) {
       console.error('Error loading items:', err);
       setItemsError(
@@ -223,11 +207,11 @@ export default function POS() {
     } finally {
       setItemsLoading(false);
     }
-  }, [categoryOptions, isAr, selectedStoreId]);
+  }, [isAr, selectedStoreId]);
 
   const fetchTables = useCallback(async () => {
     if (!selectedStoreId) {
-      setTables([]);
+      setTables([]);      
       return;
     }
 
@@ -254,6 +238,18 @@ export default function POS() {
     fetchBranches();
   }, [fetchBranches, fetchCategories, fetchItems, fetchTables]);
 
+  useEffect(() => {
+    const categoryNames = new Set(categoryOptions.map((cat) => cat.name));
+
+    items.forEach((item) => {
+      if (item.category_name) {
+        categoryNames.add(item.category_name);
+      }
+    });
+
+    setCategories(Array.from(categoryNames));
+  }, [categoryOptions, items]);
+  
   // --------------------------
   // فلترة الأصناف للعرض
   // --------------------------
