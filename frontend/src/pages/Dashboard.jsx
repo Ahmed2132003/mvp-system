@@ -214,7 +214,7 @@ export default function Dashboard() {
 
     fetchSummary();
     fetchRecentOrders();
-  }, [selectedStoreId]);// eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedStoreId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sales = summary?.sales || {};
   const salesOverTime = summary?.sales_over_time || [];

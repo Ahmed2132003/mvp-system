@@ -61,13 +61,8 @@ export default function CreateUser() {
 
     setStoresLoading(true);
     try {
-      let res;
-      try {
-        res = await api.get('/stores/');
-      } catch {
-        res = await api.get('/core/stores/');
-      }
-
+      const res = await api.get('/stores/');
+      
       const results = Array.isArray(res.data) ? res.data : res.data.results || [];
       setStores(results);
     } catch (e) {

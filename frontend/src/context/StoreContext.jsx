@@ -52,7 +52,7 @@ export const StoreProvider = ({ children }) => {
       setStoresLoading(true);
       setStoresError(null);
 
-      const res = await api.get('/core/stores/');
+      const res = await api.get('/stores/');      
       const data = Array.isArray(res.data) ? res.data : res.data.results || [];
       setStores(data);
 
