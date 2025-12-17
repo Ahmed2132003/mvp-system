@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status
 from django.db.models import Count
+from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -8,11 +9,12 @@ from .models import Category, Item, Inventory
 from .serializers import CategorySerializer, ItemSerializer, InventorySerializer
 from .filters import CategoryFilter, ItemFilter, InventoryFilter
 from core.permissions import IsManager, IsEmployeeOfStore
+from core.store_api import get_user_store
 from django.db import transaction
-from django.db.models import Count, F
+from django.db.models import F
 
 
-class CategoryViewSet(viewsets.ModelViewSet):
+class CategoryViewSet(viewsets.ModelViewSet):    
     serializer_class = CategorySerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = CategoryFilter
@@ -32,7 +34,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         role = getattr(user, 'role', None)
-
+        
         qs = Category.objects.all()
 
         # لو اليوزر ليه employee و store
@@ -45,8 +47,15 @@ class CategoryViewSet(viewsets.ModelViewSet):
         # نضيف عدد الأصناف في كل كاتيجوري
         return qs.annotate(items_count=Count('items'))
 
+    def perform_create(self, serializer):
+        store = get_user_store(self.request.user)
+        if not store:
+            raise ValidationError({"detail": "لا يوجد متجر مرتبط بهذا الحساب لإضافة التصنيفات."})
 
-class ItemViewSet(viewsets.ModelViewSet):
+        serializer.save(store=store)
+        
+
+class ItemViewSet(viewsets.ModelViewSet):    
     serializer_class = ItemSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = ItemFilter
@@ -66,7 +75,7 @@ class ItemViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         role = getattr(user, 'role', None)
-
+        
         qs = Item.objects.all()
 
         if hasattr(user, 'employee') and getattr(user.employee, 'store', None):
@@ -76,6 +85,13 @@ class ItemViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    def perform_create(self, serializer):
+        store = get_user_store(self.request.user)
+        if not store:
+            raise ValidationError({"detail": "لا يوجد متجر مرتبط بهذا الحساب لإضافة الأصناف."})
+
+        serializer.save(store=store)
+        
 
 class InventoryViewSet(viewsets.ModelViewSet):
     serializer_class = InventorySerializer

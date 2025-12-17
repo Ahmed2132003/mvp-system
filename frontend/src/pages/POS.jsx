@@ -8,6 +8,7 @@ import React, {
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useStore } from '../hooks/useStore';
+import { useAuth } from '../hooks/useAuth';
 
 const ORDER_TYPES = {
   DINE_IN: 'DINE_IN',
@@ -47,6 +48,30 @@ export default function POS() {
   });
 
   const { selectedStoreId } = useStore();
+  const { user } = useAuth();
+
+  const canManageItems =
+    user?.is_superuser || ['OWNER', 'MANAGER'].includes(user?.role);
+
+  const [categoryOptions, setCategoryOptions] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+
+  const [newItemModalOpen, setNewItemModalOpen] = useState(false);
+  const [creatingItem, setCreatingItem] = useState(false);
+  const [createItemError, setCreateItemError] = useState(null);
+  const [newItemForm, setNewItemForm] = useState({
+    name: '',
+    category: '',
+    newCategory: '',
+    unitPrice: '',
+    costPrice: '',
+    barcode: '',
+    branch: '',
+    quantity: '',
+  });
 
   // Theme + Language + مينو الموبايل
   const [theme, setTheme] = useState(
@@ -83,6 +108,77 @@ export default function POS() {
     }, 3000);
   };
 
+  const resetNewItemForm = useCallback(() => {
+    setNewItemForm({
+      name: '',
+      category: '',
+      newCategory: '',
+      unitPrice: '',
+      costPrice: '',
+      barcode: '',
+      branch: '',
+      quantity: '',
+    });
+    setCreateItemError(null);
+  }, []);
+
+  const fetchCategories = useCallback(async () => {
+    if (!selectedStoreId) {
+      setCategoryOptions([]);
+      setCategories([]);
+      return;
+    }
+
+    try {
+      setCategoriesLoading(true);
+      const res = await api.get('/inventory/categories/', {
+        params: {
+          is_active: true,
+          page_size: 200,
+        },
+      });
+
+      const results = Array.isArray(res.data)
+        ? res.data
+        : res.data.results || [];
+
+      setCategoryOptions(results);
+
+      const names = new Set(results.map((cat) => cat.name));
+      items.forEach((item) => {
+        if (item.category_name) {
+          names.add(item.category_name);
+        }
+      });
+      setCategories(Array.from(names));
+    } catch (err) {
+      console.error('Error loading categories:', err);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  }, [items, selectedStoreId]);
+
+  const fetchBranches = useCallback(async () => {
+    if (!selectedStoreId) {
+      setBranches([]);
+      return;
+    }
+
+    try {
+      setBranchesLoading(true);
+      const res = await api.get('/branches/');
+      const results = Array.isArray(res.data)
+        ? res.data
+        : res.data.results || [];
+
+      setBranches(results);
+    } catch (err) {
+      console.error('Error loading branches:', err);
+    } finally {
+      setBranchesLoading(false);
+    }
+  }, [selectedStoreId]);
+
   // --------------------------
   // جلب الأصناف والطاولات
   // --------------------------
@@ -110,17 +206,13 @@ export default function POS() {
 
       setItems(results);
 
-      const cats = [];
+      const cats = new Set(categoryOptions.map((cat) => cat.name));
       results.forEach((item) => {
-        if (
-          item.category &&
-          item.category_name &&
-          !cats.includes(item.category_name)
-        ) {
-          cats.push(item.category_name);
+        if (item.category && item.category_name) {
+          cats.add(item.category_name);
         }
       });
-      setCategories(cats);
+      setCategories(Array.from(cats));
     } catch (err) {
       console.error('Error loading items:', err);
       setItemsError(
@@ -131,7 +223,7 @@ export default function POS() {
     } finally {
       setItemsLoading(false);
     }
-  }, [isAr, selectedStoreId]);
+  }, [categoryOptions, isAr, selectedStoreId]);
 
   const fetchTables = useCallback(async () => {
     if (!selectedStoreId) {
@@ -158,7 +250,9 @@ export default function POS() {
   useEffect(() => {
     fetchItems();
     fetchTables();
-  }, [fetchItems, fetchTables]);
+    fetchCategories();
+    fetchBranches();
+  }, [fetchBranches, fetchCategories, fetchItems, fetchTables]);
 
   // --------------------------
   // فلترة الأصناف للعرض
@@ -186,9 +280,106 @@ export default function POS() {
     return list;
   }, [items, selectedCategory, searchTerm]);
 
+  const handleNewItemFieldChange = (field, value) => {
+    setNewItemForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleCreateItem = async (e) => {
+    e.preventDefault();
+    if (!canManageItems) return;
+
+    if (!selectedStoreId) {
+      const msg = isAr
+        ? 'اختر متجرًا قبل إضافة الأصناف الجديدة.'
+        : 'Please select a store before adding new items.';
+      setCreateItemError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+
+    const { name, unitPrice, costPrice, barcode, category, newCategory, branch, quantity } = newItemForm;
+
+    if (!name.trim()) {
+      const msg = isAr ? 'اسم الصنف مطلوب.' : 'Item name is required.';
+      setCreateItemError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+
+    const numericPrice = Number(unitPrice);
+    if (!numericPrice || Number.isNaN(numericPrice) || numericPrice <= 0) {
+      const msg = isAr
+        ? 'سعر البيع يجب أن يكون رقمًا أكبر من صفر.'
+        : 'Unit price must be a number greater than zero.';
+      setCreateItemError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+
+    setCreatingItem(true);
+    setCreateItemError(null);
+
+    try {
+      let categoryId = category || null;
+
+      if (!categoryId && newCategory.trim()) {
+        const catRes = await api.post('/inventory/categories/', {
+          name: newCategory.trim(),
+          store: selectedStoreId,
+        });
+        categoryId = catRes.data?.id;
+        await fetchCategories();
+      }
+
+      const payload = {
+        name: name.trim(),
+        unit_price: numericPrice,
+        cost_price: costPrice ? Number(costPrice) : null,
+        barcode: barcode?.trim() || null,
+        category: categoryId || null,
+        is_active: true,
+      };
+
+      const itemRes = await api.post('/inventory/items/', payload);
+      const itemId = itemRes.data?.id;
+
+      if (itemId && branch && Number(quantity) > 0) {
+        await api.post('/inventory/', {
+          item_id: itemId,
+          branch,
+          quantity: Number(quantity),
+          min_stock: 0,
+        });
+      }
+
+      showToast(
+        isAr
+          ? 'تم إضافة الصنف للمخزون والمنيو وهو ظاهر الآن في شاشة الكاشير.'
+          : 'Item added to inventory/menu and now visible in POS.'
+      );
+      setNewItemModalOpen(false);
+      resetNewItemForm();
+      fetchItems();
+    } catch (err) {
+      console.error('Error creating item:', err);
+      const msg =
+        err.response?.data?.detail ||
+        err.response?.data?.name?.[0] ||
+        err.response?.data?.unit_price?.[0] ||
+        (isAr
+          ? 'تعذر إضافة الصنف، تأكد من البيانات والمحاولة مرة أخرى.'
+          : 'Unable to add the item. Please review the data and try again.');
+      setCreateItemError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setCreatingItem(false);
+    }
+  };
+
   // --------------------------
   // إدارة الـ Cart
-  // --------------------------
+    // --------------------------
+
   const handleAddToCart = (item) => {
     setCart((prev) => {
       const existing = prev.find((row) => row.itemId === item.id);
@@ -571,9 +762,29 @@ export default function POS() {
 
   const renderProducts = () => (
     <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 flex flex-col h-full">
+      {canManageItems && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-3">
+          <div className="flex-1 text-[11px] bg-blue-50 border border-blue-100 text-blue-800 rounded-xl px-3 py-2 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-100">
+            {isAr
+              ? 'المدير أو المالك أو السوبر يوزر يقدر يضيف صنف جديد يظهر مباشرة في المخزون والمنيو والكاشير.'
+              : 'Managers/owners/superusers can add a new item that shows immediately in inventory, menu, and POS.'}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              resetNewItemForm();
+              setNewItemModalOpen(true);
+            }}
+            className="text-xs px-3 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
+          >
+            {isAr ? 'إضافة صنف جديد' : 'Add new item'}
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mb-4">
         <input
-          type="text"
+          type="text"          
           placeholder={
             isAr
               ? 'ابحث باسم الصنف أو الباركود...'
@@ -1009,9 +1220,211 @@ export default function POS() {
         </main>
       </div>
 
+      {newItemModalOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800 p-5">
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
+                  {isAr ? 'إضافة صنف جديد' : 'Add a new item'}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {isAr
+                    ? 'املأ البيانات وسيتم إنشاء الصنف مع تحديث المخزون والمنيو فورًا.'
+                    : 'Fill the fields to create the item and update inventory/menu instantly.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewItemModalOpen(false);
+                  resetNewItemForm();
+                }}
+                className="text-gray-500 hover:text-gray-700 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            {createItemError && (
+              <div className="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 dark:bg-red-900/20 dark:border-red-700 dark:text-red-200">
+                {createItemError}
+              </div>
+            )}
+
+            <form className="space-y-3" onSubmit={handleCreateItem}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+                    {isAr ? 'اسم الصنف' : 'Item name'}
+                  </label>
+                  <input
+                    type="text"
+                    value={newItemForm.name}
+                    onChange={(e) => handleNewItemFieldChange('name', e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:border-slate-800 dark:text-gray-100"
+                    placeholder={isAr ? 'مثال: شاي نعناع' : 'e.g., Mint tea'}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+                    {isAr ? 'سعر البيع' : 'Unit price'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newItemForm.unitPrice}
+                    onChange={(e) => handleNewItemFieldChange('unitPrice', e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:border-slate-800 dark:text-gray-100"
+                    placeholder={isAr ? 'سعر البيع' : 'Selling price'}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+                    {isAr ? 'التصنيف' : 'Category'}
+                  </label>
+                  <select
+                    value={newItemForm.category}
+                    onChange={(e) => handleNewItemFieldChange('category', e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:border-slate-800 dark:text-gray-100"
+                  >
+                    <option value="">
+                      {isAr ? 'اختر تصنيفًا موجودًا' : 'Choose an existing category'}
+                    </option>
+                    {categoryOptions.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                  {categoriesLoading && (
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {isAr ? 'جاري تحميل التصنيفات...' : 'Loading categories...'}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+                    {isAr ? 'تصنيف جديد (اختياري)' : 'New category (optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={newItemForm.newCategory}
+                    onChange={(e) => handleNewItemFieldChange('newCategory', e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:border-slate-800 dark:text-gray-100"
+                    placeholder={isAr ? 'سيتم إنشاؤه تلقائيًا' : 'Will be created automatically'}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+                    {isAr ? 'سعر التكلفة (اختياري)' : 'Cost price (optional)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newItemForm.costPrice}
+                    onChange={(e) => handleNewItemFieldChange('costPrice', e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:border-slate-800 dark:text-gray-100"
+                    placeholder={isAr ? 'تكلفة الشراء' : 'Purchase cost'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+                    {isAr ? 'باركود (اختياري)' : 'Barcode (optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={newItemForm.barcode}
+                    onChange={(e) => handleNewItemFieldChange('barcode', e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:border-slate-800 dark:text-gray-100"
+                    placeholder={isAr ? 'امسح أو اكتب الكود' : 'Scan or type the code'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+                    {isAr ? 'الفرع للمخزون (اختياري)' : 'Branch for stock (optional)'}
+                  </label>
+                  <select
+                    value={newItemForm.branch}
+                    onChange={(e) => handleNewItemFieldChange('branch', e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:border-slate-800 dark:text-gray-100"
+                  >
+                    <option value="">
+                      {isAr ? 'بدون تحديث مخزون الآن' : 'Skip stock update now'}
+                    </option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                  {branchesLoading && (
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {isAr ? 'جاري تحميل الفروع...' : 'Loading branches...'}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+                    {isAr ? 'كمية البدء (اختياري)' : 'Initial quantity (optional)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={newItemForm.quantity}
+                    onChange={(e) => handleNewItemFieldChange('quantity', e.target.value)}
+                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:border-slate-800 dark:text-gray-100"
+                    placeholder={isAr ? 'يتم ربطه بالفرع المختار' : 'Linked to selected branch'}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewItemModalOpen(false);
+                    resetNewItemForm();
+                  }}
+                  className="px-4 py-2 rounded-xl border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
+                >
+                  {isAr ? 'إلغاء' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingItem}
+                  className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {creatingItem
+                    ? isAr
+                      ? 'جاري الحفظ...'
+                      : 'Saving...'
+                    : isAr
+                    ? 'حفظ الصنف'
+                    : 'Save item'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Toast */}
       {toast.open && (
-        <div className="fixed bottom-4 right-4 z-50">
+        <div className="fixed bottom-4 right-4 z-50">          
           <div
             className={`max-w-xs rounded-2xl shadow-lg px-4 py-3 text-sm border-l-4 ${
               toast.type === 'success'

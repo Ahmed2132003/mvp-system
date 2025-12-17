@@ -1,7 +1,15 @@
 /* eslint-disable react-refresh/only-export-components */
 
 // src/context/StoreContext.jsx
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import api from '../lib/api';
 import { notifyError } from '../lib/notifications';
 import { useAuth } from '../hooks/useAuth';
@@ -17,6 +25,7 @@ export const StoreProvider = ({ children }) => {
   const [selectedStoreId, setSelectedStoreId] = useState(() =>
     localStorage.getItem('selected_store_id') || null
   );
+  const storesRef = useRef([]);
 
   const persistSelectedStore = useCallback((storeId, storeName) => {
     if (storeId) {
@@ -35,14 +44,15 @@ export const StoreProvider = ({ children }) => {
       const idAsString = storeId ? String(storeId) : null;
       setSelectedStoreId(idAsString);
 
-      const selectedStore = stores.find((s) => String(s.id) === idAsString);
+      const selectedStore = storesRef.current.find((s) => String(s.id) === idAsString);
       persistSelectedStore(idAsString, selectedStore?.name);
     },
-    [persistSelectedStore, stores]
+    [persistSelectedStore]
   );
 
   const fetchStores = useCallback(async () => {
     if (!isAuthenticated) {
+      storesRef.current = [];
       setStores([]);
       selectStore(null);
       return;
@@ -54,8 +64,9 @@ export const StoreProvider = ({ children }) => {
 
       const res = await api.get('/stores/');      
       const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+      storesRef.current = data;
       setStores(data);
-
+      
       const storedId = localStorage.getItem('selected_store_id');
       const matched = data.find((s) => String(s.id) === storedId);
 
