@@ -354,10 +354,10 @@ const fetchBranches = useCallback(async () => {
       const itemId = itemRes.data?.id;
 
       if (itemId && branch && Number(quantity) > 0) {
-        await api.post('/inventory/', {
+        await api.post('/inventory/inventory/', {
           item_id: itemId,
           branch,
-          quantity: Number(quantity),
+          quantity: Number(quantity),          
           min_stock: 0,
         });
       }

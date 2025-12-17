@@ -17,6 +17,11 @@ export default function InventoryPage() {
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [branchFilter, setBranchFilter] = useState('');
 
+  const [addBranchModalOpen, setAddBranchModalOpen] = useState(false);
+  const [newBranch, setNewBranch] = useState({ name: '', address: '', phone: '' });
+  const [creatingBranch, setCreatingBranch] = useState(false);
+  const [createBranchError, setCreateBranchError] = useState(null);
+
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState(''); // client-side filter
@@ -93,6 +98,50 @@ export default function InventoryPage() {
       setCategories([]);
     } finally {
       setCategoriesLoading(false);
+    }
+  };
+
+  const handleCreateBranch = async (e) => {
+    e.preventDefault();
+
+    if (!selectedStoreId) {
+      notifyError('اختر متجرًا قبل إضافة الفروع.');
+      return;
+    }
+
+    if (!newBranch.name.trim()) {
+      setCreateBranchError('اسم الفرع مطلوب');
+      return;
+    }
+
+    try {
+      setCreatingBranch(true);
+      setCreateBranchError(null);
+
+      await api.post(
+        '/branches/',
+        {
+          name: newBranch.name.trim(),
+          address: newBranch.address.trim() || null,
+          phone: newBranch.phone.trim() || null,
+        },
+        { params: { store_id: selectedStoreId } }
+      );
+
+      notifySuccess('تم إضافة الفرع بنجاح');
+      setAddBranchModalOpen(false);
+      setNewBranch({ name: '', address: '', phone: '' });
+      fetchBranches();
+    } catch (err) {
+      console.error('خطأ في إضافة الفرع:', err);
+      const msg =
+        err.response?.data?.detail ||
+        err.response?.data?.name?.[0] ||
+        'تعذر إضافة الفرع. برجاء المحاولة مرة أخرى.';
+      setCreateBranchError(msg);
+      notifyError(msg);
+    } finally {
+      setCreatingBranch(false);
     }
   };
 
@@ -404,10 +453,23 @@ export default function InventoryPage() {
                 {/* fallback: لو categories فاضية، المستخدم يقدر يفلتر من الملخص تحت */}
               </select>
 
+              {canManageInventory && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddBranchModalOpen(true);
+                    setCreateBranchError(null);
+                  }}
+                  className="text-sm px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700 transition"
+                >
+                  إضافة فرع
+                </button>
+              )}
+
               {(branchesLoading || categoriesLoading) && (
                 <span className="text-[11px] text-gray-500">
                   {branchesLoading ? 'تحميل الفروع...' : ''}
-                  {branchesLoading && categoriesLoading ? ' • ' : ''}
+                  {branchesLoading && categoriesLoading ? ' • ' : ''}                  
                   {categoriesLoading ? 'تحميل التصنيفات...' : ''}
                 </span>
               )}
@@ -751,11 +813,93 @@ export default function InventoryPage() {
               </section>
             )}
 
+            {/* مودال إضافة فرع */}
+            {addBranchModalOpen && canManageInventory && (
+              <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
+                <div className="bg-white rounded-2xl shadow-lg w-full max-w-md mx-4 p-5" dir="rtl">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">إضافة فرع جديد</h3>
+                  <p className="text-[11px] text-gray-500 mb-4">
+                    سيتم ربط الفرع بالمتجر الحالي، ولن يظهر هذا الزر لموظفي الكاشير.
+                  </p>
+
+                  {createBranchError && (
+                    <div className="mb-3 text-xs bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl">
+                      {createBranchError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleCreateBranch} className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] text-gray-600 mb-1">اسم الفرع</label>
+                      <input
+                        type="text"
+                        value={newBranch.name}
+                        onChange={(e) =>
+                          setNewBranch((prev) => ({ ...prev, name: e.target.value }))
+                        }
+                        className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        placeholder="مثال: فرع التجمع الخامس"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-gray-600 mb-1">العنوان (اختياري)</label>
+                      <input
+                        type="text"
+                        value={newBranch.address}
+                        onChange={(e) =>
+                          setNewBranch((prev) => ({ ...prev, address: e.target.value }))
+                        }
+                        className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        placeholder="العنوان التفصيلي للفرع"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-gray-600 mb-1">رقم الهاتف (اختياري)</label>
+                      <input
+                        type="text"
+                        value={newBranch.phone}
+                        onChange={(e) =>
+                          setNewBranch((prev) => ({ ...prev, phone: e.target.value }))
+                        }
+                        className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        placeholder="01xxxxxxxxx"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddBranchModalOpen(false);
+                          setCreateBranchError(null);
+                        }}
+                        className="text-sm px-4 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50"
+                        disabled={creatingBranch}
+                      >
+                        إلغاء
+                      </button>
+
+                      <button
+                        type="submit"
+                        className="text-sm px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700 transition disabled:opacity-60"
+                        disabled={creatingBranch}
+                      >
+                        {creatingBranch ? 'جارٍ الحفظ...' : 'حفظ الفرع'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
             {/* مودال تعديل المخزون */}
             {adjustModalOpen && selectedEntry && canManageInventory && (
               <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
                 <div className="bg-white rounded-2xl shadow-lg w-full max-w-md mx-4 p-5" dir="rtl">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-1">                    
                     تعديل مخزون الصنف
                   </h3>
                   <p className="text-[11px] text-gray-500 mb-3">
