@@ -80,10 +80,12 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('access');
     localStorage.removeItem('refresh');
     localStorage.removeItem('token');
+    localStorage.removeItem('selected_store_id');
+    localStorage.removeItem('selected_store_name');
     setUser(null);
     window.location.href = '/login';
   }, []);
-
+  
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);

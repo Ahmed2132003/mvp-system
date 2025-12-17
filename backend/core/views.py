@@ -4,7 +4,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
+from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny, SAFE_METHODS
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.conf import settings
@@ -59,14 +59,14 @@ def list_stores(request):
         pass
     elif getattr(user, "role", None) == User.RoleChoices.OWNER:
         qs = qs.filter(owner=user)
-    elif getattr(user, "role", None) == User.RoleChoices.MANAGER:
+    elif getattr(user, "role", None) in [User.RoleChoices.MANAGER, User.RoleChoices.STAFF]:
         try:
             qs = qs.filter(id=user.employee.store_id)
         except Exception:
             qs = Store.objects.none()
     else:
         qs = Store.objects.none()
-
+        
     return Response([
         {"id": s.id, "name": s.name, "address": s.address}
         for s in qs.order_by("id")
@@ -134,18 +134,37 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     serializer_class = EmployeeSerializer
     permission_classes = [IsManager]
 
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [IsAuthenticated()]
+        return [perm() for perm in self.permission_classes]
+
     def get_queryset(self):
         user = self.request.user
         qs = Employee.objects.select_related('user', 'store')
 
-        if user.is_superuser or user.role == User.RoleChoices.OWNER:
+        store_id = self.request.query_params.get('store_id')
+        if store_id:
+            qs = qs.filter(store_id=store_id)
+
+        if user.is_superuser:
             return qs
 
-        if hasattr(user, 'employee') and user.employee.store:
-            return qs.filter(store=user.employee.store)
+        if user.role == User.RoleChoices.OWNER:
+            return qs.filter(store__owner=user)
+
+        if user.role == User.RoleChoices.MANAGER:
+            try:
+                manager_store = user.employee.store_id
+            except Exception:
+                return Employee.objects.none()
+            return qs.filter(store_id=manager_store)
+
+        if user.role == User.RoleChoices.STAFF:
+            return qs.filter(user=user)
 
         return qs.none()
-
+    
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def me(self, request):
         """
@@ -182,10 +201,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def attendance(self, request, pk=None):
-        logs = AttendanceLog.objects.filter(employee_id=pk).order_by("-check_in")
+        employee = self.get_object()
+        logs = AttendanceLog.objects.filter(employee=employee).order_by("-check_in")
         return Response([
             {
-                "work_date": getattr(log, "work_date", None),
+                "work_date": getattr(log, "work_date", None),                
                 "check_in": log.check_in,
                 "check_out": log.check_out,
                 "late_minutes": log.late_minutes,
@@ -197,10 +217,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def payrolls(self, request, pk=None):
-        payrolls = PayrollPeriod.objects.filter(employee_id=pk)
+        employee = self.get_object()
+        payrolls = PayrollPeriod.objects.filter(employee=employee)
         return Response([
             {
-                "id": p.id,
+                "id": p.id,                
                 "month": p.month,
                 "base_salary": p.base_salary,
                 "penalties": p.penalties,
@@ -232,10 +253,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def ledger(self, request, pk=None):
-        entries = EmployeeLedger.objects.filter(employee_id=pk)
+        employee = self.get_object()
+        entries = EmployeeLedger.objects.filter(employee=employee)
         return Response([
             {
-                "type": e.entry_type,
+                "type": e.entry_type,                
                 "amount": e.amount,
                 "description": e.description,
                 "created_at": e.created_at,

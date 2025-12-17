@@ -22,10 +22,12 @@ class IsOwner(permissions.BasePermission):
 class IsManager(permissions.BasePermission):
     def has_permission(self, request, view):
         return (
-            request.user.is_authenticated and
-            getattr(request.user, 'role', None) in ['OWNER', 'MANAGER']
+            request.user.is_authenticated and (
+                request.user.is_superuser or
+                getattr(request.user, 'role', None) in ['OWNER', 'MANAGER']
+            )
         )
-
+        
 
 class IsCashier(permissions.BasePermission):
     """

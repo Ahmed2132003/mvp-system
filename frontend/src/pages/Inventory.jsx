@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifySuccess, notifyError } from '../lib/notifications';
+import { useStore } from '../hooks/useStore';
 
 export default function InventoryPage() {
   const [inventory, setInventory] = useState([]);
@@ -17,6 +18,8 @@ export default function InventoryPage() {
     outOfStockCount: 0,
     totalValue: 0,
   });
+
+  const { selectedStoreId } = useStore();
 
   // حالة مودال تعديل المخزون
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
@@ -74,10 +77,12 @@ export default function InventoryPage() {
   };
 
   useEffect(() => {
-    fetchInventory();
+    if (selectedStoreId) {
+      fetchInventory();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  }, [selectedStoreId]);
+  
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     fetchInventory();

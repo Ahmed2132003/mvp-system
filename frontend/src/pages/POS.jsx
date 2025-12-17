@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
+import { useStore } from '../hooks/useStore';
 
 const ORDER_TYPES = {
   DINE_IN: 'DINE_IN',
@@ -44,6 +45,8 @@ export default function POS() {
     message: '',
     type: 'success', // 'success' | 'error'
   });
+
+  const { selectedStoreId } = useStore();
 
   // Theme + Language + مينو الموبايل
   const [theme, setTheme] = useState(
@@ -84,6 +87,12 @@ export default function POS() {
   // جلب الأصناف والطاولات
   // --------------------------
   const fetchItems = useCallback(async () => {
+    if (!selectedStoreId) {
+      setItems([]);
+      setCategories([]);
+      return;
+    }
+
     try {
       setItemsLoading(true);
       setItemsError(null);
@@ -122,9 +131,14 @@ export default function POS() {
     } finally {
       setItemsLoading(false);
     }
-  }, [isAr]);
+  }, [isAr, selectedStoreId]);
 
   const fetchTables = useCallback(async () => {
+    if (!selectedStoreId) {
+      setTables([]);
+      return;
+    }
+
     try {
       setTablesLoading(true);
       const res = await api.get('/tables/');
@@ -139,7 +153,7 @@ export default function POS() {
     } finally {
       setTablesLoading(false);
     }
-  }, []);
+  }, [selectedStoreId]);
 
   useEffect(() => {
     fetchItems();

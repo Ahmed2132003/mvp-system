@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifyError } from '../lib/notifications';
-
+import { useStore } from '../hooks/useStore';
 // =====================
 // Sidebar Navigation
 // =====================
@@ -101,6 +101,15 @@ export default function Dashboard() {
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const {
+    stores,
+    storesLoading,
+    storesError,
+    selectedStoreId,
+    // eslint-disable-next-line no-unused-vars
+    selectedStore,
+    selectStore,
+  } = useStore();
   // theme & language
   const [theme, setTheme] = useState(
     () => localStorage.getItem('theme') || 'light'
@@ -150,7 +159,7 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const res = await api.get('/reports/summary/');
-      setSummary(res.data);
+      setSummary(res.data);      
       setError(null);
     } catch (err) {
       console.error('Error loading dashboard summary:', err);
@@ -192,10 +201,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchMe(); // ✅ جديد
+  }, []);
+  
+  useEffect(() => {
+    if (!selectedStoreId) {
+      setSummary(null);
+      setRecentOrders([]);
+      setLoading(false);
+      setOrdersLoading(false);
+      return;
+    }
+
     fetchSummary();
     fetchRecentOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedStoreId]);// eslint-disable-line react-hooks/exhaustive-deps
 
   const sales = summary?.sales || {};
   const salesOverTime = summary?.sales_over_time || [];
@@ -386,10 +405,35 @@ export default function Dashboard() {
                 </option>
               </select>
 
-              <select className="hidden md:block text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100">
-                <option>{isAr ? 'الفرع الرئيسي' : 'Main branch'}</option>
-              </select>
-
+              <div className="hidden md:block">
+                <label className="sr-only" htmlFor="store-switcher">
+                  {isAr ? 'اختيار الفرع' : 'Select branch'}
+                </label>
+                <select
+                  id="store-switcher"
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                  value={selectedStoreId || ''}
+                  onChange={(e) => selectStore(e.target.value)}
+                  disabled={storesLoading || !stores.length}
+                >
+                  {storesLoading && (
+                    <option>{isAr ? 'جارِ التحميل...' : 'Loading...'}</option>
+                  )}
+                  {!storesLoading && stores.length === 0 && (
+                    <option>{isAr ? 'لا توجد فروع متاحة' : 'No branches available'}</option>
+                  )}
+                  {!storesLoading &&
+                    stores.map((store) => (
+                      <option key={store.id} value={store.id}>
+                        {store.name}
+                      </option>
+                    ))}
+                </select>
+                {storesError && (
+                  <p className="text-xs text-red-600 mt-1">{storesError}</p>
+                )}
+              </div>
+              
               {/* Language switcher */}
               <div className="flex items-center text-[11px] border border-gray-200 rounded-full overflow-hidden dark:border-slate-700">
                 <button
