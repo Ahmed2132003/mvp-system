@@ -13,25 +13,29 @@ export default function InventoryPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const [stats, setStats] = useState({
-    totalItems: 0,
-    lowStockCount: 0,
-    outOfStockCount: 0,
-    totalValue: 0,
-    totalSaleValue: 0,
-    totalCostValue: 0,
-  });
-
   const [branches, setBranches] = useState([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [branchFilter, setBranchFilter] = useState('');
 
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState(''); // client-side filter
+
   const { selectedStoreId } = useStore();
   const { user } = useAuth();
+
   const canManageInventory = useMemo(
     () => user?.is_superuser || ['OWNER', 'MANAGER'].includes(user?.role),
     [user]
   );
+
+  // لما نبدّل الفرع الرئيسي، نفرّغ الفلاتر المرتبطة عشان ما يفضلش ماسك قيمة قديمة
+  useEffect(() => {
+    setBranchFilter('');
+    setCategoryFilter('');
+    setSearch('');
+    setStatusFilter('all');
+  }, [selectedStoreId]);
 
   // حالة مودال تعديل المخزون
   const [adjustModalOpen, setAdjustModalOpen] = useState(false);
@@ -43,73 +47,6 @@ export default function InventoryPage() {
   });
   const [savingAdjust, setSavingAdjust] = useState(false);
   const [adjustError, setAdjustError] = useState(null);
-
-  const fetchInventory = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const params = {};
-      if (selectedStoreId) params.store_id = selectedStoreId;
-      if (search) params.item_name = search;
-      if (statusFilter === 'low') params.status = 'low';
-      if (statusFilter === 'out') params.status = 'out';
-      if (branchFilter) params.branch = branchFilter;
-
-      const res = await api.get('/inventory/inventory/', { params });
-
-      const results = Array.isArray(res.data) ? res.data : res.data.results || [];
-
-      setInventory(results);
-
-      let totalItems = results.length;
-      let lowStockCount = results.filter((row) => row.is_low).length;
-      let outOfStockCount = results.filter((row) => row.quantity === 0).length;
-      let totalValue = 0;
-      let totalSaleValue = 0;
-      let totalCostValue = 0;
-
-      results.forEach((row) => {
-        const qty = row.quantity || 0;
-        const unitPrice = Number(row.item?.unit_price ?? 0);
-        const costPrice = Number(row.item?.cost_price ?? 0);
-        const fallbackPrice = row.item?.cost_price ?? row.item?.unit_price ?? 0;
-        totalValue += qty * Number(fallbackPrice);
-        totalSaleValue += qty * unitPrice;
-        totalCostValue += qty * costPrice;
-      });
-
-      setStats({
-        totalItems,
-        lowStockCount,
-        outOfStockCount,
-        totalValue,
-        totalSaleValue,
-        totalCostValue,
-      });      
-    } catch (err) {
-      console.error('خطأ في تحميل بيانات المخزون:', err);
-      const msg = 'حدث خطأ أثناء تحميل بيانات المخزون';
-      setError(msg);
-      notifyError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (selectedStoreId) {
-      fetchInventory();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStoreId, branchFilter]);
-
-  useEffect(() => {
-    if (selectedStoreId) {
-      fetchBranches();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStoreId]);
 
   const fetchBranches = async () => {
     if (!selectedStoreId) {
@@ -132,6 +69,72 @@ export default function InventoryPage() {
       setBranchesLoading(false);
     }
   };
+
+  const fetchCategories = async () => {
+    if (!selectedStoreId) {
+      setCategories([]);
+      return;
+    }
+
+    try {
+      setCategoriesLoading(true);
+      // غالبًا عندك endpoint للكاتيجوري ضمن inventory app
+      // لو مسارك مختلف عدّل السطر ده فقط.
+      const res = await api.get('/inventory/categories/', {
+        params: { store_id: selectedStoreId },
+      });
+
+      const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setCategories(data);
+    } catch (err) {
+      console.error('خطأ في تحميل التصنيفات:', err);
+      // مش هنوقف الصفحة لو categories فشلت — دي تحسين UX
+      notifyError('تعذر تحميل التصنيفات');
+      setCategories([]);
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
+  const fetchInventory = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const params = {};
+      if (selectedStoreId) params.store_id = selectedStoreId;
+      if (search) params.item_name = search;
+      if (statusFilter === 'low') params.status = 'low';
+      if (statusFilter === 'out') params.status = 'out';
+      if (branchFilter) params.branch = branchFilter;
+
+      const res = await api.get('/inventory/inventory/', { params });
+
+      const results = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setInventory(results);
+    } catch (err) {
+      console.error('خطأ في تحميل بيانات المخزون:', err);
+      const msg = 'حدث خطأ أثناء تحميل بيانات المخزون';
+      setError(msg);
+      notifyError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedStoreId) {
+      fetchInventory();
+      fetchBranches();
+      fetchCategories();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStoreId]);
+
+  useEffect(() => {
+    if (selectedStoreId) fetchInventory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -166,7 +169,7 @@ export default function InventoryPage() {
       setSavingAdjust(true);
       setAdjustError(null);
 
-      await api.post(`/inventory/inventory/${selectedEntry.id}/adjust-stock/`, {        
+      await api.post(`/inventory/inventory/${selectedEntry.id}/adjust-stock/`, {
         movement_type: adjustForm.movement_type,
         change: qty,
         reason: adjustForm.reason || undefined,
@@ -188,53 +191,120 @@ export default function InventoryPage() {
     }
   };
 
+  // فلترة Client-side للـ Category (عشان ما نعتمدش على باك إند جديد)
+  const visibleInventory = useMemo(() => {
+    if (!categoryFilter) return inventory;
+
+    return inventory.filter((row) => {
+      const rowCatId = row?.item?.category; // غالبًا ID
+      const rowCatName = row?.item?.category_name || '';
+      // نقبل بالـ id أو الاسم (لو frontend بيرجع name فقط)
+      return String(rowCatId) === String(categoryFilter) || rowCatName === categoryFilter;
+    });
+  }, [inventory, categoryFilter]);
+
+  // حساب KPIs على البيانات الظاهرة (بعد الفلاتر)
+  const stats = useMemo(() => {
+    const results = visibleInventory;
+
+    const totalItems = results.length;
+    const lowStockCount = results.filter((row) => row.is_low).length;
+    const outOfStockCount = results.filter((row) => Number(row.quantity || 0) === 0).length;
+
+    let totalUnits = 0;
+    let totalSaleValue = 0;
+    let totalCostValue = 0;
+    let totalFallbackValue = 0;
+
+    results.forEach((row) => {
+      const qty = Number(row.quantity || 0);
+      totalUnits += qty;
+
+      const unitPrice = Number(row.item?.unit_price ?? 0);
+      const costPrice = Number(row.item?.cost_price ?? 0);
+      const fallbackPrice = Number(row.item?.cost_price ?? row.item?.unit_price ?? 0);
+
+      totalSaleValue += qty * unitPrice;
+      totalCostValue += qty * costPrice;
+      totalFallbackValue += qty * fallbackPrice;
+    });
+
+    return {
+      totalItems,
+      totalUnits,
+      lowStockCount,
+      outOfStockCount,
+      totalSaleValue,
+      totalCostValue,
+      totalFallbackValue,
+    };
+  }, [visibleInventory]);
+
   const kpis = useMemo(() => {
     const base = [
+      { id: 1, label: 'عدد الأصناف الظاهرة', value: stats.totalItems },
+      { id: 2, label: 'إجمالي عدد الوحدات', value: stats.totalUnits },
+      { id: 3, label: 'أصناف منخفضة المخزون', value: stats.lowStockCount },
+      { id: 4, label: 'أصناف نفدت بالكامل', value: stats.outOfStockCount },
       {
-        id: 1,
-        label: 'عدد أصناف المخزون',
-        value: stats.totalItems,
+        id: 5,
+        label: 'قيمة المخزون (حسب آخر سعر معروف)',
+        value: `${stats.totalFallbackValue.toLocaleString('ar-EG', {
+          maximumFractionDigits: 0,
+        })} ج.م`,
       },
       {
-        id: 2,
-        label: 'أصناف منخفضة المخزون',
-        value: stats.lowStockCount,
-      },
-      {
-        id: 3,
-        label: 'أصناف نفدت بالكامل',
-        value: stats.outOfStockCount,
-      },
-      {
-        id: 4,
-        label: 'قيمة المخزون التقديرية (حسب آخر سعر معروف)',
-        value: `${stats.totalValue.toLocaleString('ar-EG', {
+        id: 6,
+        label: 'قيمة المخزون بسعر البيع',
+        value: `${stats.totalSaleValue.toLocaleString('ar-EG', {
           maximumFractionDigits: 0,
         })} ج.م`,
       },
     ];
 
     if (canManageInventory) {
-      base.push(
-        {
-          id: 5,
-          label: 'إجمالي قيمة البيع الحالية',
-          value: `${stats.totalSaleValue.toLocaleString('ar-EG', {
-            maximumFractionDigits: 0,
-          })} ج.م`,
-        },
-        {
-          id: 6,
-          label: 'إجمالي تكلفة الشراء الحالية',
-          value: `${stats.totalCostValue.toLocaleString('ar-EG', {
-            maximumFractionDigits: 0,
-          })} ج.م`,
-        }
-      );
+      base.push({
+        id: 7,
+        label: 'تكلفة شراء المخزون الحالية (COGS)',
+        value: `${stats.totalCostValue.toLocaleString('ar-EG', {
+          maximumFractionDigits: 0,
+        })} ج.م`,
+      });
     }
 
     return base;
   }, [stats, canManageInventory]);
+
+  // ملخص Categories (محسوب من المخزون الظاهر + دمج مع categories endpoint لو موجود)
+  const categorySummary = useMemo(() => {
+    // map by category name (عرض)
+    const map = new Map();
+
+    visibleInventory.forEach((row) => {
+      const catName = row?.item?.category_name || 'بدون تصنيف';
+      const qty = Number(row.quantity || 0);
+      const sale = Number(row.item?.unit_price ?? 0) * qty;
+      const cost = Number(row.item?.cost_price ?? 0) * qty;
+
+      const current = map.get(catName) || {
+        name: catName,
+        itemsCount: 0,
+        totalQty: 0,
+        saleValue: 0,
+        costValue: 0,
+      };
+
+      current.itemsCount += 1;
+      current.totalQty += qty;
+      current.saleValue += sale;
+      current.costValue += cost;
+
+      map.set(catName, current);
+    });
+
+    // ترتيب: أعلى قيمة بيع أولًا
+    return Array.from(map.values()).sort((a, b) => b.saleValue - a.saleValue);
+  }, [visibleInventory]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -268,6 +338,7 @@ export default function InventoryPage() {
               <span>إدارة المخزون</span>
               <span className="text-xs bg-blue-100 px-2 py-0.5 rounded-full">الآن</span>
             </Link>
+
             <Link
               to="/settings"
               className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-gray-100 transition"
@@ -295,7 +366,7 @@ export default function InventoryPage() {
             <div>
               <h2 className="text-lg md:text-2xl font-bold text-gray-900">إدارة المخزون</h2>
               <p className="text-xs md:text-sm text-gray-500 mt-1">
-                راقب كميات الأصناف وتابع الحالات الحرجة في كل الفروع
+                كل الأصناف + قيم البيع/الشراء + ملخص التصنيفات
               </p>
             </div>
 
@@ -307,6 +378,7 @@ export default function InventoryPage() {
                   setTimeout(fetchInventory, 0);
                 }}
                 className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                title="فلتر الفرع"
               >
                 <option value="">كل الفروع</option>
                 {branches.map((branch) => (
@@ -316,8 +388,28 @@ export default function InventoryPage() {
                 ))}
               </select>
 
-              {branchesLoading && (
-                <span className="text-[11px] text-gray-500">يتم تحميل الفروع...</span>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                title="فلتر التصنيف"
+              >
+                <option value="">كل التصنيفات</option>
+                {/* لو categories endpoint شغال هنستخدمه */}
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.items_count ?? 0})
+                  </option>
+                ))}
+                {/* fallback: لو categories فاضية، المستخدم يقدر يفلتر من الملخص تحت */}
+              </select>
+
+              {(branchesLoading || categoriesLoading) && (
+                <span className="text-[11px] text-gray-500">
+                  {branchesLoading ? 'تحميل الفروع...' : ''}
+                  {branchesLoading && categoriesLoading ? ' • ' : ''}
+                  {categoriesLoading ? 'تحميل التصنيفات...' : ''}
+                </span>
               )}
 
               <div className="flex items-center gap-2">
@@ -326,9 +418,9 @@ export default function InventoryPage() {
                 </div>
                 <div className="hidden sm:block">
                   <p className="text-xs font-semibold text-gray-800">
-                    {user?.role || (user?.is_superuser ? 'Superuser' : 'User')}
+                    {user?.is_superuser ? 'Superuser' : user?.role || 'User'}
                   </p>
-                  <p className="text-[11px] text-gray-500">إدارة المخزون</p>
+                  <p className="text-[11px] text-gray-500">Inventory</p>
                 </div>
               </div>
             </div>
@@ -336,7 +428,6 @@ export default function InventoryPage() {
 
           {/* Content */}
           <div className="px-4 md:px-8 py-6 space-y-6">
-            {/* حالة التحميل / الخطأ */}
             {loading && (
               <div className="w-full bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-2xl">
                 جاري تحميل بيانات المخزون...
@@ -399,6 +490,66 @@ export default function InventoryPage() {
               </div>
             </section>
 
+            {/* Category summary */}
+            {!loading && categorySummary.length > 0 && (
+              <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">ملخص التصنيفات</h3>
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      عدد الأصناف + إجمالي الكمية + القيم داخل كل Category (حسب الفلاتر الحالية)
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="text-[11px] px-3 py-1.5 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-700"
+                    onClick={() => setCategoryFilter('')}
+                    title="إلغاء فلتر التصنيف"
+                  >
+                    إلغاء فلتر التصنيف
+                  </button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {categorySummary.slice(0, 8).map((c) => (
+                    <button
+                      key={c.name}
+                      type="button"
+                      onClick={() => setCategoryFilter(c.name)} // fallback by name
+                      className="text-right bg-gray-50 hover:bg-gray-100 transition rounded-2xl border border-gray-100 p-4"
+                      title="اضغط لفلترة الجدول بهذا التصنيف"
+                    >
+                      <p className="text-xs font-semibold text-gray-900">{c.name}</p>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        أصناف: {c.itemsCount} • وحدات: {c.totalQty}
+                      </p>
+                      <p className="text-[11px] text-gray-600 mt-2">
+                        قيمة البيع:{' '}
+                        <span className="font-semibold">
+                          {c.saleValue.toLocaleString('ar-EG', { maximumFractionDigits: 0 })} ج.م
+                        </span>
+                      </p>
+                      {canManageInventory && (
+                        <p className="text-[11px] text-gray-600 mt-1">
+                          تكلفة الشراء:{' '}
+                          <span className="font-semibold">
+                            {c.costValue.toLocaleString('ar-EG', { maximumFractionDigits: 0 })} ج.م
+                          </span>
+                        </p>
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                {categorySummary.length > 8 && (
+                  <p className="mt-3 text-[11px] text-gray-400">
+                    * يتم عرض أعلى 8 تصنيفات حسب قيمة البيع. (تقدر تضغط على أي تصنيف للفلترة)
+                  </p>
+                )}
+              </section>
+            )}
+
             {/* Inventory table */}
             {!loading && (
               <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5">
@@ -406,15 +557,15 @@ export default function InventoryPage() {
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">قائمة المخزون</h3>
                     <p className="text-[11px] text-gray-500 mt-1">
-                      كل صنف مع كميته الحالية وحد إعادة الطلب في كل فرع
+                      كل صنف مع كميته + قيم البيع/الشراء + حد إعادة الطلب في كل فرع
                     </p>
                   </div>
                   <span className="text-[11px] px-2 py-1 rounded-full bg-gray-50 text-gray-600">
-                    {inventory.length} صفوف معروضة
+                    {visibleInventory.length} صفوف معروضة
                   </span>
                 </div>
 
-                {inventory.length === 0 ? (
+                {visibleInventory.length === 0 ? (
                   <p className="text-xs text-gray-500">
                     لا توجد بيانات مخزون مطابقة للفلاتر الحالية.
                   </p>
@@ -432,6 +583,7 @@ export default function InventoryPage() {
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             الفرع
                           </th>
+
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             سعر البيع
                           </th>
@@ -440,20 +592,23 @@ export default function InventoryPage() {
                               تكلفة الشراء
                             </th>
                           )}
+
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             الكمية
                           </th>
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             حد إعادة الطلب
                           </th>
+
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
-                            إجمالي البيع
+                            قيمة المخزون (بيع)
                           </th>
                           {canManageInventory && (
                             <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
-                              إجمالي التكلفة
+                              قيمة المخزون (شراء)
                             </th>
                           )}
+
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap">
                             الحالة
                           </th>
@@ -467,14 +622,18 @@ export default function InventoryPage() {
                           )}
                         </tr>
                       </thead>
+
                       <tbody>
-                        {inventory.map((row) => {
-                          const isOut = row.quantity === 0;
+                        {visibleInventory.map((row) => {
+                          const qty = Number(row.quantity || 0);
+                          const isOut = qty === 0;
                           const isLow = row.is_low;
+
                           const salePrice = Number(row.item?.unit_price ?? 0);
                           const costPrice = Number(row.item?.cost_price ?? 0);
-                          const saleTotal = salePrice * (row.quantity || 0);
-                          const costTotal = costPrice * (row.quantity || 0);
+
+                          const saleTotal = salePrice * qty;
+                          const costTotal = costPrice * qty;
 
                           let statusLabel = 'مستقر';
                           let statusClass = 'bg-emerald-50 text-emerald-700';
@@ -504,12 +663,15 @@ export default function InventoryPage() {
                               <td className="py-2 px-2 whitespace-nowrap font-semibold text-gray-800">
                                 {row.item?.name || 'غير محدد'}
                               </td>
+
                               <td className="py-2 px-2 whitespace-nowrap text-gray-600">
-                                {row.item?.category_name || '-'}
+                                {row.item?.category_name || 'بدون تصنيف'}
                               </td>
+
                               <td className="py-2 px-2 whitespace-nowrap text-gray-600">
                                 {row.branch_name || '-'}
                               </td>
+
                               <td className="py-2 px-2 whitespace-nowrap text-gray-800">
                                 {salePrice.toLocaleString('ar-EG', {
                                   minimumFractionDigits: 2,
@@ -517,6 +679,7 @@ export default function InventoryPage() {
                                 })}{' '}
                                 ج.م
                               </td>
+
                               {canManageInventory && (
                                 <td className="py-2 px-2 whitespace-nowrap text-gray-800">
                                   {costPrice.toLocaleString('ar-EG', {
@@ -526,18 +689,22 @@ export default function InventoryPage() {
                                   ج.م
                                 </td>
                               )}
+
                               <td className="py-2 px-2 whitespace-nowrap text-gray-800">
-                                {row.quantity}
+                                {qty}
                               </td>
+
                               <td className="py-2 px-2 whitespace-nowrap text-gray-800">
                                 {row.min_stock}
                               </td>
+
                               <td className="py-2 px-2 whitespace-nowrap text-gray-800">
                                 {saleTotal.toLocaleString('ar-EG', {
                                   maximumFractionDigits: 0,
                                 })}{' '}
                                 ج.م
                               </td>
+
                               {canManageInventory && (
                                 <td className="py-2 px-2 whitespace-nowrap text-gray-800">
                                   {costTotal.toLocaleString('ar-EG', {
@@ -546,6 +713,7 @@ export default function InventoryPage() {
                                   ج.م
                                 </td>
                               )}
+
                               <td className="py-2 px-2 whitespace-nowrap">
                                 <span
                                   className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] ${statusClass}`}
@@ -553,9 +721,11 @@ export default function InventoryPage() {
                                   {statusLabel}
                                 </span>
                               </td>
+
                               <td className="py-2 px-2 whitespace-nowrap text-gray-600">
                                 {updatedAt}
                               </td>
+
                               {canManageInventory && (
                                 <td className="py-2 px-2 whitespace-nowrap">
                                   <button
@@ -569,7 +739,7 @@ export default function InventoryPage() {
                               )}
                             </tr>
                           );
-                        })}                        
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -582,7 +752,7 @@ export default function InventoryPage() {
             )}
 
             {/* مودال تعديل المخزون */}
-            {adjustModalOpen && selectedEntry && canManageInventory && (              
+            {adjustModalOpen && selectedEntry && canManageInventory && (
               <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
                 <div className="bg-white rounded-2xl shadow-lg w-full max-w-md mx-4 p-5" dir="rtl">
                   <h3 className="text-sm font-semibold text-gray-900 mb-1">
