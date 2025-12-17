@@ -19,6 +19,10 @@ export default function InventoryPage() {
     totalValue: 0,
   });
 
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [branchFilter, setBranchFilter] = useState('');
+
   const { selectedStoreId } = useStore();
 
   // حالة مودال تعديل المخزون
@@ -38,9 +42,11 @@ export default function InventoryPage() {
       setError(null);
 
       const params = {};
+      if (selectedStoreId) params.store_id = selectedStoreId;
       if (search) params.item_name = search;
       if (statusFilter === 'low') params.status = 'low';
       if (statusFilter === 'out') params.status = 'out';
+      if (branchFilter) params.branch = branchFilter;
 
       const res = await api.get('/inventory/', { params });
 
@@ -81,8 +87,37 @@ export default function InventoryPage() {
       fetchInventory();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStoreId, branchFilter]);
+
+  useEffect(() => {
+    if (selectedStoreId) {
+      fetchBranches();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStoreId]);
-  
+
+  const fetchBranches = async () => {
+    if (!selectedStoreId) {
+      setBranches([]);
+      return;
+    }
+
+    try {
+      setBranchesLoading(true);
+      const res = await api.get('/branches/', {
+        params: { store_id: selectedStoreId },
+      });
+
+      const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setBranches(data);
+    } catch (err) {
+      console.error('خطأ في تحميل الفروع المتاحة:', err);
+      notifyError('تعذر تحميل الفروع المتاحة');
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     fetchInventory();
@@ -227,11 +262,26 @@ export default function InventoryPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              {/* Placeholder لاختيار الفرع لاحقًا */}
-              <select className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40">
-                <option>كل الفروع</option>
+              <select
+                value={branchFilter}
+                onChange={(e) => {
+                  setBranchFilter(e.target.value);
+                  setTimeout(fetchInventory, 0);
+                }}
+                className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <option value="">كل الفروع</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
               </select>
 
+              {branchesLoading && (
+                <span className="text-[11px] text-gray-500">يتم تحميل الفروع...</span>
+              )}
+              
               <div className="flex items-center gap-2">
                 <div className="h-9 w-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-sm font-bold">
                   O

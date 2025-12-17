@@ -74,23 +74,29 @@ class IsEmployeeOfStore(permissions.BasePermission):
         if not request.user.is_authenticated:
             return False
 
+        if request.user.is_superuser:
+            return True
+
         role = getattr(request.user, 'role', None)
 
         # Owner نسمحله مبدئيًا
         if role == 'OWNER':
             return True
-
+        
         try:
             return request.user.employee.store is not None
         except AttributeError:
             return False
 
     def has_object_permission(self, request, view, obj):
+        if request.user.is_superuser:
+            return True
+
         try:
             user_store = request.user.employee.store
         except AttributeError:
             role = getattr(request.user, 'role', None)
-            if role == 'OWNER':
+            if role == 'OWNER':                
                 return True
             return False
 

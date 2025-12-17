@@ -9,7 +9,7 @@ from .models import Category, Item, Inventory
 from .serializers import CategorySerializer, ItemSerializer, InventorySerializer
 from .filters import CategoryFilter, ItemFilter, InventoryFilter
 from core.permissions import IsManager, IsEmployeeOfStore
-from core.store_api import get_user_store
+from core.utils.store_context import get_store_from_request
 from django.db import transaction
 from django.db.models import F
 
@@ -34,8 +34,14 @@ class CategoryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         role = getattr(user, 'role', None)
-        
+
         qs = Category.objects.all()
+
+        store = get_store_from_request(self.request)
+        if not store:
+            return Category.objects.none()
+
+        qs = qs.filter(store=store)
 
         # لو اليوزر ليه employee و store
         if hasattr(user, 'employee') and getattr(user.employee, 'store', None):
@@ -48,12 +54,12 @@ class CategoryViewSet(viewsets.ModelViewSet):
         return qs.annotate(items_count=Count('items'))
 
     def perform_create(self, serializer):
-        store = get_user_store(self.request.user)
+        store = get_store_from_request(self.request)
         if not store:
             raise ValidationError({"detail": "لا يوجد متجر مرتبط بهذا الحساب لإضافة التصنيفات."})
 
         serializer.save(store=store)
-        
+                
 
 class ItemViewSet(viewsets.ModelViewSet):    
     serializer_class = ItemSerializer
@@ -86,7 +92,7 @@ class ItemViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        store = get_user_store(self.request.user)
+        store = get_store_from_request(self.request)
         if not store:
             raise ValidationError({"detail": "لا يوجد متجر مرتبط بهذا الحساب لإضافة الأصناف."})
 
@@ -117,18 +123,14 @@ class InventoryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from .models import Inventory  # لتفادي أي circular imports غريبة
 
-        user = self.request.user
-        role = getattr(user, 'role', None)
-
-        qs = Inventory.objects.select_related('item', 'branch')
-
-        # لو فيه Employee مربوط بستور
-        if hasattr(user, 'employee') and getattr(user.employee, 'store', None):
-            store = user.employee.store
-            qs = qs.filter(branch__store=store)
-        elif role != 'OWNER':
+        store = get_store_from_request(self.request)
+        if not store:
             return Inventory.objects.none()
 
+        qs = Inventory.objects.select_related('item', 'branch').filter(
+            branch__store=store
+        )
+        
         # فلتر حالة المخزون (status) من الـ query params: low / out
         status_param = self.request.query_params.get('status')
         if status_param == 'low':

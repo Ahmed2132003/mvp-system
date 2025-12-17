@@ -62,11 +62,11 @@ export const StoreProvider = ({ children }) => {
       setStoresLoading(true);
       setStoresError(null);
 
-      const res = await api.get('/stores/');      
+      const res = await api.get('/stores/available/');         
       const data = Array.isArray(res.data) ? res.data : res.data.results || [];
       storesRef.current = data;
       setStores(data);
-      
+
       const storedId = localStorage.getItem('selected_store_id');
       const matched = data.find((s) => String(s.id) === storedId);
 

@@ -135,6 +135,7 @@ export default function POS() {
         params: {
           is_active: true,
           page_size: 200,
+          store_id: selectedStoreId,
         },
       });
 
@@ -150,26 +151,29 @@ export default function POS() {
     }
   }, [selectedStoreId]);
 
-  const fetchBranches = useCallback(async () => {
-    if (!selectedStoreId) {
-      setBranches([]);
-      return;
-    }
+const fetchBranches = useCallback(async () => {
+  if (!selectedStoreId) {
+    setBranches([]);
+    return;
+  }
 
-    try {
-      setBranchesLoading(true);
-      const res = await api.get('/branches/');
-      const results = Array.isArray(res.data)
-        ? res.data
-        : res.data.results || [];
+  try {
+    setBranchesLoading(true);
+    const res = await api.get('/branches/', {
+      params: { store_id: selectedStoreId },
+    });
 
-      setBranches(results);
-    } catch (err) {
-      console.error('Error loading branches:', err);
-    } finally {
-      setBranchesLoading(false);
-    }
-  }, [selectedStoreId]);
+    const results = Array.isArray(res.data)
+      ? res.data
+      : res.data.results || [];
+
+    setBranches(results);
+  } catch (err) {
+    console.error('Error loading branches:', err);
+  } finally {
+    setBranchesLoading(false);
+  }
+}, [selectedStoreId]);
 
   // --------------------------
   // جلب الأصناف والطاولات
@@ -189,6 +193,7 @@ export default function POS() {
         params: {
           is_active: true,
           page_size: 100,
+          store_id: selectedStoreId,
         },
       });
 
@@ -217,7 +222,9 @@ export default function POS() {
 
     try {
       setTablesLoading(true);
-      const res = await api.get('/tables/');
+      const res = await api.get('/tables/', {
+        params: { store_id: selectedStoreId },
+      });
 
       const results = Array.isArray(res.data)
         ? res.data
@@ -249,7 +256,7 @@ export default function POS() {
 
     setCategories(Array.from(categoryNames));
   }, [categoryOptions, items]);
-  
+
   // --------------------------
   // فلترة الأصناف للعرض
   // --------------------------
@@ -319,10 +326,15 @@ export default function POS() {
       let categoryId = category || null;
 
       if (!categoryId && newCategory.trim()) {
-        const catRes = await api.post('/inventory/categories/', {
-          name: newCategory.trim(),
-          store: selectedStoreId,
-        });
+        const catRes = await api.post(
+          '/inventory/categories/',
+          {
+            name: newCategory.trim(),
+            store: selectedStoreId,
+          },
+          { params: { store_id: selectedStoreId } }
+        );
+
         categoryId = catRes.data?.id;
         await fetchCategories();
       }
@@ -336,7 +348,9 @@ export default function POS() {
         is_active: true,
       };
 
-      const itemRes = await api.post('/inventory/items/', payload);
+      const itemRes = await api.post('/inventory/items/', payload, {
+        params: { store_id: selectedStoreId },
+      });      
       const itemId = itemRes.data?.id;
 
       if (itemId && branch && Number(quantity) > 0) {
