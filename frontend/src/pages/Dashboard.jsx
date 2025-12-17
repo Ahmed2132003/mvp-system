@@ -72,6 +72,13 @@ function SidebarNav({ lang }) {
       >
         {isAr ? 'الحسابات' : 'Accounting'}
       </Link>
+      <Link
+        to="/kds"
+        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+      >
+        {isAr ? 'المطبخ والبار' : 'KDS'}
+      </Link>
+
 
       <Link
         to="/users/create"
