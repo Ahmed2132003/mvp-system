@@ -5,6 +5,9 @@ import { notifySuccess, notifyError } from '../lib/notifications';
 
 const LAST_GPS_KEY = 'attendance:last-gps';
 
+// =====================
+// GPS cache helpers
+// =====================
 function loadLastGps() {
   try {
     const cached = localStorage.getItem(LAST_GPS_KEY);
@@ -60,13 +63,16 @@ async function getGeoLocation() {
     throw err;
   }
 }
-// ✅ helper: format ISO datetime nicely
-function fmtDateTime(v) {
+
+// =====================
+// Formatting helpers
+// =====================
+function fmtDateTime(v, locale = 'ar-EG') {
   if (!v) return '—';
   try {
     const d = new Date(v);
     if (Number.isNaN(d.getTime())) return String(v);
-    return d.toLocaleString('ar-EG', {
+    return d.toLocaleString(locale, {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -78,33 +84,141 @@ function fmtDateTime(v) {
   }
 }
 
-function fmtMinutes(min) {
-  if (!min) return '0 د';
+function fmtMinutes(min, isAr) {
+  if (!min) return isAr ? '0 د' : '0 min';
   const h = Math.floor(min / 60);
   const m = Math.floor(min % 60);
-  if (!h) return `${m} د`;
-  if (!m) return `${h} س`;
-  return `${h} س ${m} د`;
+  if (!h) return isAr ? `${m} د` : `${m} min`;
+  if (!m) return isAr ? `${h} س` : `${h} h`;
+  return isAr ? `${h} س ${m} د` : `${h} h ${m} min`;
 }
 
-function fmtTime(value) {
+function fmtTime(value, locale = 'ar-EG') {
   if (!value) return '—';
   try {
     const d = new Date(`1970-01-01T${value}`);
     if (Number.isNaN(d.getTime())) return String(value);
-    return d.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   } catch {
     return String(value);
   }
 }
 
-function renderLocation(loc) {
+function renderLocation(loc, isAr) {
   if (!loc?.lat || !loc?.lng) return '—';
-  const accuracy = loc.accuracy ? ` (±${Math.round(loc.accuracy)}م)` : '';
+  const accuracy = loc.accuracy
+    ? isAr
+      ? ` (±${Math.round(loc.accuracy)}م)`
+      : ` (±${Math.round(loc.accuracy)}m)`
+    : '';
   return `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}${accuracy}`;
 }
 
+// =====================
+// Sidebar Navigation
+// =====================
+function SidebarNav({ lang }) {
+  const isAr = lang === 'ar';
+
+  const base =
+    'flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800';
+
+  return (
+    <>
+      <Link
+        to="/dashboard"
+        className={base}
+      >
+        {isAr ? 'الداشبورد' : 'Dashboard'}
+      </Link>
+
+      <Link to="/pos" className={base}>
+        {isAr ? 'شاشة الكاشير (POS)' : 'Cashier Screen (POS)'}
+      </Link>
+
+      <Link to="/inventory" className={base}>
+        {isAr ? 'إدارة المخزون' : 'Inventory Management'}
+      </Link>
+
+      {/* Active */}
+      <Link
+        to="/attendance"
+        className="flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
+      >
+        <span>{isAr ? 'الحضور والانصراف' : 'Attendance'}</span>
+        <span className="text-xs bg-blue-100 px-2 py-0.5 rounded-full dark:bg-blue-800/70">
+          {isAr ? 'الآن' : 'Now'}
+        </span>
+      </Link>
+
+      <Link to="/reservations" className={base}>
+        {isAr ? 'الحجوزات' : 'Reservations'}
+      </Link>
+
+      <Link to="/reports" className={base}>
+        {isAr ? 'التقارير' : 'Reports'}
+      </Link>
+
+      <Link to="/settings" className={base}>
+        {isAr ? 'الإعدادات' : 'Settings'}
+      </Link>
+
+      <Link to="/employees" className={base}>
+        {isAr ? 'الموظفين' : 'Employees'}
+      </Link>
+
+      <Link to="/accounting" className={base}>
+        {isAr ? 'الحسابات' : 'Accounting'}
+      </Link>
+
+      <Link to="/users/create" className={base}>
+        {isAr ? 'إدارة المستخدمين' : 'User Management'}
+      </Link>
+
+      <button
+        type="button"
+        className={`w-full text-right ${base}`}
+      >
+        {isAr ? 'التقارير' : 'Reports (Soon)'}
+      </button>
+    </>
+  );
+}
+
 export default function EmployeeAttendance() {
+  // ==================
+  // Theme & language
+  // ==================
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  const [lang, setLang] = useState(() => localStorage.getItem('lang') || 'en');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  const isAr = lang === 'ar';
+  const locale = isAr ? 'ar-EG' : 'en-EG';
+
+  const t = useCallback(
+    (ar, en) => (isAr ? ar : en),
+    [isAr]
+  );
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    if (theme === 'dark') document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('lang', lang);
+    document.documentElement.lang = lang;
+    document.documentElement.dir = isAr ? 'rtl' : 'ltr';
+  }, [lang, isAr]);
+
+  const toggleTheme = () => setTheme((p) => (p === 'dark' ? 'light' : 'dark'));
+  const setLanguage = (lng) => setLang(lng);
+
+  // ==================
+  // Attendance state
+  // ==================
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
@@ -114,9 +228,12 @@ export default function EmployeeAttendance() {
 
   const monthly = status?.month || {};
   const salary = Number(status?.employee?.salary) || 0;
-  const attendanceValue = Number(monthly.attendance_value) || 0;
-  const totalPenalties = Number(monthly.penalties) || 0;
-  const remainingThisMonth = Math.max(0, salary - attendanceValue - totalPenalties);
+  const attendanceValue = Math.max(0, Number(monthly.attendance_value) || 0);
+  const totalPenalties = Math.max(0, Number(monthly.penalties) || 0);
+  const projectedNetSalary =
+    typeof monthly.projected_net_salary === 'number'
+      ? Math.max(0, Number(monthly.projected_net_salary))
+      : Math.max(0, salary - attendanceValue - totalPenalties);
 
   const fetchMyStatus = useCallback(async () => {
     try {
@@ -125,12 +242,14 @@ export default function EmployeeAttendance() {
       setStatus(res.data);
     } catch (e) {
       setStatus(null);
-      const msg = e?.response?.data?.detail || 'تعذر جلب ملخص الحضور.';
+      const msg =
+        e?.response?.data?.detail ||
+        t('تعذر جلب ملخص الحضور.', 'Failed to load attendance summary.');
       notifyError(msg);
     } finally {
       setStatusLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchMyStatus();
@@ -145,7 +264,12 @@ export default function EmployeeAttendance() {
     try {
       const location = await getGeoLocation();
       if (!location?.lat || !location?.lng) {
-        throw new Error('تعذر تحديد موقعك. من فضلك فعّل خدمة الموقع وحاول مرة أخرى.');
+        throw new Error(
+          t(
+            'تعذر تحديد موقعك. من فضلك فعّل خدمة الموقع وحاول مرة أخرى.',
+            'Could not detect your location. Please enable location services and try again.'
+          )
+        );
       }
 
       const gpsPayload = {
@@ -155,10 +279,8 @@ export default function EmployeeAttendance() {
       };
       const payload = { gps: gpsPayload };
       const usedCachedGps = Boolean(location.cached);
-      console.log('[Attendance] POST /attendance/check payload:', payload);
 
       const res = await api.post('/attendance/check/', payload);
-      console.log('[Attendance] Response:', res?.status, res?.data);
 
       setResult({
         status: res.data.status,
@@ -175,31 +297,42 @@ export default function EmployeeAttendance() {
       });
 
       fetchMyStatus();
-      notifySuccess(res.data.message || 'تم تسجيل العملية بنجاح');
+
+      notifySuccess(res.data.message || t('تم تسجيل العملية بنجاح', 'Recorded successfully'));
       if (usedCachedGps) {
-        notifyError('تم استخدام آخر موقع محفوظ. يرجى تفعيل خدمة الموقع لتسجيل موقعك الحالي.');
+        notifyError(
+          t(
+            'تم استخدام آخر موقع محفوظ. يرجى تفعيل خدمة الموقع لتسجيل موقعك الحالي.',
+            'Last saved location was used. Please enable location services to record your current position.'
+          )
+        );
       }
     } catch (err) {
       const statusCode = err?.response?.status;
       const data = err?.response?.data;
-      console.error('[Attendance] Error:', statusCode, data, err);
 
       let msg =
         data?.message ||
         data?.detail ||
         err.message ||
-        'حدث خطأ أثناء تسجيل الحضور/الانصراف.';
+        t('حدث خطأ أثناء تسجيل الحضور/الانصراف.', 'Error while recording attendance.');
 
       if (err?.code === 1) {
-        msg = 'تم رفض إذن الموقع. رجاء تفعيل تحديد الموقع للتسجيل.';
+        msg = t(
+          'تم رفض إذن الموقع. رجاء تفعيل تحديد الموقع للتسجيل.',
+          'Location permission denied. Please allow location access to proceed.'
+        );
       } else if (err?.message === 'غير مدعوم') {
-        msg = 'متصفحك لا يدعم تحديد الموقع أو يحتاج إلى تفعيل HTTPS.';
+        msg = t(
+          'متصفحك لا يدعم تحديد الموقع أو يحتاج إلى تفعيل HTTPS.',
+          'Geolocation is not supported or requires HTTPS.'
+        );
       }
 
       setError(msg);
 
       if (statusCode === 401) {
-        notifyError('غير مصرح: برجاء تسجيل الدخول مرة أخرى.');
+        notifyError(t('غير مصرح: برجاء تسجيل الدخول مرة أخرى.', 'Unauthorized: please log in again.'));
       } else {
         notifyError(msg);
       }
@@ -211,214 +344,445 @@ export default function EmployeeAttendance() {
   const isCheckin = result?.status === 'checkin';
   const isCheckout = result?.status === 'checkout';
 
+  // ==================
+  // UI
+  // ==================
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4" dir="rtl">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6 space-y-4">
-        <header className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg md:text-2xl font-bold text-gray-900">تسجيل حضور الموظفين</h1>
-            <p className="text-xs md:text-sm text-gray-500 mt-1">
-              اضغط على الزر لتسجيل الدخول أو الانصراف. يجب تفعيل الموقع وسيتم تسجيل التأخير والخصومات تلقائيًا.
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 dark:text-gray-50">
+      <div className="flex min-h-screen">
+        {/* Sidebar - Desktop */}
+        <aside className="hidden md:flex w-64 flex-col bg-white border-l border-gray-200 shadow-sm dark:bg-slate-900 dark:border-slate-800">
+          <div className="px-6 py-5 border-b dark:border-slate-800">
+            <h1 className="text-xl font-bold text-primary dark:text-blue-300">MVP POS</h1>
+            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
+              {t('لوحة تحكم الكافيه / المطعم', 'Restaurant / Café Dashboard')}
             </p>
           </div>
-          <Link
-            to="/dashboard"
-            className="text-xs md:text-sm px-3 py-1.5 rounded-xl border border-gray-200 hover:bg-gray-50"
-          >
-            ← الرجوع للداشبورد
-          </Link>
-        </header>
 
-        {/* ✅ ملخص سريع */}
-        <section className="grid md:grid-cols-2 gap-4 bg-gray-50 border border-gray-100 rounded-2xl p-4">
-          <div className="space-y-1 text-sm">
-            <p className="text-xs font-semibold text-gray-700 flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-              بيانات الموظف الحالي
-            </p>
-            {statusLoading ? (
-              <p className="text-xs text-gray-500">جاري تحميل الملخص...</p>
-            ) : status ? (
-              <>
-                <p className="text-sm font-semibold text-gray-900">{status.employee?.name || '—'}</p>
-                <p className="text-xs text-gray-600">
-                  الفرع: {status.employee?.store_name || '—'} (ID: {status.employee?.store || '—'})
-                </p>
-                <p className="text-xs text-gray-600">الراتب الأساسي: {status.employee?.salary || 0} ج.م</p>
+          <nav className="flex-1 px-3 py-4 space-y-1">
+            <SidebarNav lang={lang} />
+          </nav>
 
-                {status.active_log ? (
-                  <div className="mt-2 text-[11px] text-blue-700 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
-                    جلسة نشطة منذ: {fmtDateTime(status.active_log.check_in)}
-                  </div>
-                ) : (
-                  <div className="mt-2 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
-                    لا توجد جلسة مفتوحة الآن.
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-xs text-red-600">تعذر تحميل بياناتك.</p>
-            )}
+          <div className="px-4 py-4 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
+            {t('نسخة تجريبية • جاهز للانطلاق 🚀', 'Beta version • Ready to launch 🚀')}
           </div>
+        </aside>
 
-          <div className="grid grid-cols-2 gap-3 text-center text-xs">
-            <div className="rounded-2xl border border-gray-200 bg-white p-3">
-              <p className="text-gray-500">حضور هذا الشهر</p>
-              <p className="text-lg font-bold text-gray-900">{status?.month?.present_days ?? '—'} يوم</p>
-            </div>
-            <div className="rounded-2xl border border-gray-200 bg-white p-3">
-              <p className="text-gray-500">الغياب المحتسب</p>
-              <p className="text-lg font-bold text-gray-900">{status?.month?.absent_days ?? '—'} يوم</p>
-            </div>
-            <div className="rounded-2xl border border-gray-200 bg-white p-3">
-              <p className="text-gray-500">إجمالي التأخير</p>
-              <p className="text-lg font-bold text-gray-900">{fmtMinutes(status?.month?.late_minutes || 0)}</p>
-            </div>
-            <div className="rounded-2xl border border-gray-200 bg-white p-3">
-              <p className="text-gray-500">الجزاءات</p>
-              <p className="text-lg font-bold text-gray-900">{status?.month?.penalties || 0} ج.م</p>
-              <p className="text-[11px] text-emerald-700 mt-1">
-                صافي تقديري: {status?.month?.estimated_net_salary ?? 0} ج.م
-              </p>
-            </div>
-          </div>
-        </section>
+        {/* Sidebar - Mobile (Overlay) */}
+        {mobileSidebarOpen && (
+          <div className="fixed inset-0 z-40 flex md:hidden" aria-modal="true">
+            <div className="fixed inset-0 bg-black/40" onClick={() => setMobileSidebarOpen(false)} />
+            <div className="relative ml-auto h-full w-64 bg-white shadow-xl border-l border-gray-200 flex flex-col dark:bg-slate-900 dark:border-slate-800">
+              <div className="px-4 py-4 border-b flex items-center justify-between dark:border-slate-800">
+                <div>
+                  <h2 className="text-base font-bold text-primary dark:text-blue-300">MVP POS</h2>
+                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
+                    {t('القائمة الرئيسية', 'Main Menu')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className="inline-flex items-center justify-center rounded-full p-1.5 border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-slate-700 dark:text-gray-300 dark:hover:bg-slate-800"
+                >
+                  <span className="sr-only">{t('إغلاق القائمة', 'Close menu')}</span>
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                    <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
 
-        {status?.month?.late_minutes > 0 && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 text-amber-900 text-xs px-4 py-3">
-            تنبيه: لديك إجمالي تأخير {fmtMinutes(status.month.late_minutes)} هذا الشهر. يرجى الالتزام بموعد الشفت لتجنب خصومات إضافية.
+              <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+                <SidebarNav lang={lang} />
+              </nav>
+
+              <div className="px-4 py-3 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
+                {t('نسخة تجريبية • جاهز للانطلاق 🚀', 'Beta version • Ready to launch 🚀')}
+              </div>
+            </div>
           </div>
         )}
 
-        {status?.shift?.start && (
-          <div className="rounded-2xl border border-indigo-100 bg-indigo-50 text-indigo-900 text-xs px-4 py-3 flex flex-col gap-1">
-            <span className="font-semibold text-sm">موعد الشفت اليومي</span>
-            <span>
-              يبدأ عند: {fmtTime(status.shift.start)} • سماحية التأخير: {status.shift.grace_minutes ?? 0} دقيقة
-            </span>
-            <span className="text-[11px] text-indigo-800">
-              غرامة كل 15 دقيقة تأخير: {status.shift.penalty_per_15min ?? 0} ج.م
-            </span>
-          </div>
-        )}
-
-        {/* ✅ تعليمات */}
-        <div className="text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3">
-          ملاحظة: الضغط على الزر يقوم تلقائيًا بتحديد ما إذا كنت تحتاج تسجيل حضور أو انصراف بناءً على آخر جلسة.
-        </div>
-
-        {/* ✅ ملخص مالي تقديري */}
-        <section className="grid md:grid-cols-3 gap-4 text-xs">
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-1">
-            <p className="text-gray-500">قيمة اليوم الواحد</p>
-            <p className="text-lg font-bold text-gray-900">{status?.month?.daily_rate?.toFixed?.(2) ?? '0.00'} ج.م</p>
-            <p className="text-[11px] text-gray-500">(الراتب ÷ 30 يوماً)</p>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-1">
-            <p className="text-gray-500">قيمة أيام الحضور</p>
-            <p className="text-lg font-bold text-gray-900">{status?.month?.attendance_value?.toFixed?.(2) ?? '0.00'} ج.م</p>
-            <p className="text-[11px] text-gray-500">عدد الأيام × قيمة اليوم</p>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-1">
-            <p className="text-gray-500">المتبقي من راتب هذا الشهر</p>
-            <p className="text-lg font-bold text-emerald-700">
-              {remainingThisMonth.toFixed(2)} ج.م
-            </p>
-            <p className="text-[11px] text-gray-500">في حال إكمال الشهر دون غياب إضافي</p>
-          </div>
-        </section>
-
-        {/* ✅ زر تسجيل الحضور/الانصراف */}
-        <section className="grid md:grid-cols-2 gap-4 items-start">
-          <div className="space-y-3">
-            <p className="text-xs font-semibold text-gray-700">تسجيل حضور/انصراف</p>
-            <p className="text-[11px] text-gray-500">سيتم طلب إذن الموقع قبل إرسال الطلب.</p>
-
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={processing}
-              className={`w-full text-sm font-semibold rounded-2xl px-4 py-3 border transition ${
-                processing
-                  ? 'bg-gray-200 border-gray-200 text-gray-500 cursor-not-allowed'
-                  : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
-              }`}
-            >
-              {processing ? 'جاري التسجيل...' : 'تسجيل الآن'}
-            </button>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl px-3 py-2">
-                {error}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-700">نتيجة آخر عملية</p>
-
-            {!processing && !error && !result && (
-              <div className="bg-gray-50 border border-dashed border-gray-200 text-gray-500 text-xs rounded-2xl px-3 py-6 text-center">
-                لم يتم تسجيل أي عملية بعد.
-              </div>
-            )}
-
-            {processing && (
-              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs rounded-2xl px-3 py-2">
-                جاري تسجيل الحضور/الانصراف...
-              </div>
-            )}
-
-            {result && (
-              <div
-                className={`rounded-2xl px-3 py-3 text-xs border ${
-                  isCheckin
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                    : isCheckout
-                    ? 'bg-blue-50 border-blue-200 text-blue-800'
-                    : 'bg-gray-50 border-gray-200 text-gray-700'
-                }`}
+        {/* Main */}
+        <main className="flex-1 flex flex-col">
+          {/* Top bar */}
+          <header className="flex items-center justify-between px-4 md:px-8 py-4 bg-white border-b border-gray-200 sticky top-0 z-20 dark:bg-slate-900 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="inline-flex md:hidden items-center justify-center rounded-xl border border-gray-200 p-2 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                onClick={() => setMobileSidebarOpen(true)}
               >
-                <p className="font-semibold mb-1">{result.message || 'تمت العملية'}</p>
+                <span className="sr-only">{t('فتح القائمة', 'Open menu')}</span>
+                <svg className="h-5 w-5" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                  <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
 
-                <div className="mt-2 space-y-1 text-[11px]">
-                  {result.work_date && <p>تاريخ اليوم: {result.work_date}</p>}
-                  {result.check_in && <p>وقت الدخول: {fmtDateTime(result.check_in)}</p>}
-                  {result.check_out && <p>وقت الخروج: {fmtDateTime(result.check_out)}</p>}
+              <div>
+                <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-gray-50">
+                  {t('الحضور والانصراف', 'Attendance')}
+                </h2>
+                <p className="text-xs md:text-sm text-gray-500 mt-1 dark:text-gray-400">
+                  {t(
+                    'سجل الدخول أو الانصراف مع التحقق بالموقع وحساب التأخير تلقائيًا',
+                    'Check in/out with GPS verification and automatic lateness calculation'
+                  )}
+                </p>
+              </div>
+            </div>
 
-                  {typeof result.is_late !== 'undefined' && result.is_late && (
-                    <p>
-                      متأخر: {result.late_minutes || 0} دقيقة • غرامة: {result.penalty || 0} ج.م
+            <div className="flex items-center gap-3">
+              {/* Quick back */}
+              <Link
+                to="/dashboard"
+                className="hidden sm:inline-flex text-xs md:text-sm px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800"
+              >
+                {t('← الرجوع للداشبورد', '← Back to Dashboard')}
+              </Link>
+
+              {/* Language */}
+              <div className="flex items-center text-[11px] border border-gray-200 rounded-full overflow-hidden dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setLanguage('en')}
+                  className={`px-2 py-1 ${
+                    !isAr ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900' : 'text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  EN
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLanguage('ar')}
+                  className={`px-2 py-1 ${
+                    isAr ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900' : 'text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  AR
+                </button>
+              </div>
+
+              {/* Theme */}
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="inline-flex items-center justify-center rounded-xl border border-gray-200 p-2 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+              >
+                {theme === 'dark' ? (
+                  <span className="flex items-center gap-1 text-[11px]">
+                    <span>☀️</span>
+                    <span className="hidden sm:inline">{t('وضع فاتح', 'Light')}</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px]">
+                    <span>🌙</span>
+                    <span className="hidden sm:inline">{t('وضع داكن', 'Dark')}</span>
+                  </span>
+                )}
+              </button>
+            </div>
+          </header>
+
+          {/* Content */}
+          <div className="px-4 md:px-8 py-6 space-y-6 max-w-7xl mx-auto w-full">
+            {/* Summary quick card */}
+            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-6 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-sm md:text-base font-bold text-gray-900 dark:text-gray-50">
+                    {t('تسجيل حضور الموظفين', 'Employee Attendance')}
+                  </h3>
+                  <p className="text-[11px] md:text-xs text-gray-500 mt-1 dark:text-gray-400">
+                    {t(
+                      'اضغط على الزر لتسجيل الدخول أو الانصراف. يجب تفعيل الموقع وسيتم تسجيل التأخير والخصومات تلقائيًا.',
+                      'Tap the button to check in or check out. Location must be enabled; lateness and penalties are calculated automatically.'
+                    )}
+                  </p>
+                </div>
+
+                <Link
+                  to="/dashboard"
+                  className="sm:hidden text-xs px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800"
+                >
+                  {t('← رجوع', '← Back')}
+                </Link>
+              </div>
+
+              {/* Status blocks */}
+              <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                {/* Employee card */}
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 dark:bg-slate-800/70 dark:border-slate-700">
+                  <p className="text-xs font-semibold text-gray-700 flex items-center gap-2 dark:text-gray-200">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                    {t('بيانات الموظف الحالي', 'Current employee')}
+                  </p>
+
+                  {statusLoading ? (
+                    <p className="text-xs text-gray-500 mt-2 dark:text-gray-400">
+                      {t('جاري تحميل الملخص...', 'Loading summary...')}
+                    </p>
+                  ) : status ? (
+                    <>
+                      <p className="text-sm font-semibold text-gray-900 mt-2 dark:text-gray-50">
+                        {status.employee?.name || '—'}
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1 dark:text-gray-300">
+                        {t('الفرع:', 'Branch:')} {status.employee?.store_name || '—'}{' '}
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                          (ID: {status.employee?.store || '—'})
+                        </span>
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1 dark:text-gray-300">
+                        {t('الراتب الأساسي:', 'Base salary:')} {status.employee?.salary || 0}{' '}
+                        {t('ج.م', 'EGP')}
+                      </p>
+
+                      {status.active_log ? (
+                        <div className="mt-3 text-[11px] text-blue-700 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-100">
+                          {t('جلسة نشطة منذ:', 'Active session since:')}{' '}
+                          {fmtDateTime(status.active_log.check_in, locale)}
+                        </div>
+                      ) : (
+                        <div className="mt-3 text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-100">
+                          {t('لا توجد جلسة مفتوحة الآن.', 'No open session right now.')}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-red-600 mt-2 dark:text-red-200">
+                      {t('تعذر تحميل بياناتك.', 'Failed to load your data.')}
                     </p>
                   )}
-                  
-                  {typeof result.duration_minutes !== 'undefined' &&
-                    result.duration_minutes !== null && (
-                      <p>المدة بالدقائق: {result.duration_minutes}</p>
-                    )}
-
-                  {result.gps && <p>الموقع المسجل: {renderLocation(result.gps)}</p>}
                 </div>
 
-                <div className="mt-2 text-[11px] text-gray-600">
-                  {isCheckin
-                    ? 'تم تسجيل دخولك. المرة القادمة سيتم تسجيل الانصراف تلقائيًا.'
-                    : isCheckout
-                    ? 'تم تسجيل انصرافك. المرة القادمة سيتم تسجيل الحضور تلقائيًا.'
-                    : null}
-                  {result?.is_late && (
-                    <div className="text-red-600 mt-2">تنبيه: تم رصد تأخير في هذه العملية. الرجاء الالتزام بموعد الشفت.</div>
-                  )}
-                  {result?.usedCachedGps && (
-                    <div className="text-amber-700 mt-2">
-                      تم استخدام آخر موقع محفوظ لعدم القدرة على تحديد موقع جديد. يرجى تفعيل الموقع لتسجيل موقعك الحالي.
-                    </div>
-                  )}
+                {/* Month stats */}
+                <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  <div className="rounded-2xl border border-gray-200 bg-white p-3 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-gray-500 text-[11px] dark:text-gray-400">{t('حضور هذا الشهر', 'Present days')}</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-gray-50">
+                      {status?.month?.present_days ?? '—'} {t('يوم', 'day(s)')}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white p-3 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-gray-500 text-[11px] dark:text-gray-400">{t('الغياب المحتسب', 'Absent days')}</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-gray-50">
+                      {status?.month?.absent_days ?? '—'} {t('يوم', 'day(s)')}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white p-3 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-gray-500 text-[11px] dark:text-gray-400">{t('إجمالي التأخير', 'Total late')}</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-gray-50">
+                      {fmtMinutes(status?.month?.late_minutes || 0, isAr)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-200 bg-white p-3 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-gray-500 text-[11px] dark:text-gray-400">{t('الجزاءات', 'Penalties')}</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-gray-50">
+                      {status?.month?.penalties || 0} {t('ج.م', 'EGP')}
+                    </p>
+                    <p className="text-[11px] text-emerald-700 mt-1 dark:text-emerald-200">
+                      {t('الصافي حتى تاريخه:', 'Net so far:')}{' '}
+                      {Math.max(0, status?.month?.estimated_net_salary || 0)} {t('ج.م', 'EGP')}
+                    </p>
+                  </div>
                 </div>
               </div>
-            )}
+
+              {/* Alerts */}
+              {status?.month?.late_minutes > 0 && (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-900 text-xs px-4 py-3 dark:bg-amber-900/30 dark:border-amber-800 dark:text-amber-100">
+                  {t(
+                    `تنبيه: لديك إجمالي تأخير ${fmtMinutes(status.month.late_minutes, true)} هذا الشهر. يرجى الالتزام بموعد الشفت لتجنب خصومات إضافية.`,
+                    `Warning: you have ${fmtMinutes(status.month.late_minutes, false)} total lateness this month. Please be on time to avoid extra deductions.`
+                  )}
+                </div>
+              )}
+
+              {status?.shift?.start && (
+                <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 text-indigo-900 text-xs px-4 py-3 flex flex-col gap-1 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-100">
+                  <span className="font-semibold text-sm">
+                    {t('موعد الشفت اليومي', 'Daily shift time')}
+                  </span>
+                  <span>
+                    {t('يبدأ عند:', 'Starts at:')} {fmtTime(status.shift.start, locale)} •{' '}
+                    {t('سماحية التأخير:', 'Grace:')} {status.shift.grace_minutes ?? 0}{' '}
+                    {t('دقيقة', 'min')}
+                  </span>
+                  <span className="text-[11px] opacity-90">
+                    {t('غرامة كل 15 دقيقة تأخير:', 'Penalty per 15 min late:')}{' '}
+                    {status.shift.penalty_per_15min ?? 0} {t('ج.م', 'EGP')}
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-4 text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 dark:bg-slate-800/60 dark:border-slate-700 dark:text-gray-300">
+                {t(
+                  'ملاحظة: الضغط على الزر يقوم تلقائيًا بتحديد ما إذا كنت تحتاج تسجيل حضور أو انصراف بناءً على آخر جلسة.',
+                  'Note: the button automatically decides whether you are checking in or out based on your last session.'
+                )}
+              </div>
+            </section>
+
+            {/* Financial estimate */}
+            <section className="grid gap-4 md:grid-cols-3 text-xs">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 dark:bg-slate-900 dark:border-slate-800">
+                <p className="text-gray-500 dark:text-gray-400">{t('قيمة اليوم الواحد', 'Daily rate')}</p>
+                <p className="text-lg font-bold text-gray-900 mt-1 dark:text-gray-50">
+                  {status?.month?.daily_rate?.toFixed?.(2) ?? '0.00'} {t('ج.م', 'EGP')}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
+                  {t('(الراتب ÷ 30 يوماً)', '(Salary ÷ 30 days)')}
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 dark:bg-slate-900 dark:border-slate-800">
+                <p className="text-gray-500 dark:text-gray-400">{t('قيمة أيام الحضور', 'Attendance value')}</p>
+                <p className="text-lg font-bold text-gray-900 mt-1 dark:text-gray-50">
+                  {status?.month?.attendance_value?.toFixed?.(2) ?? '0.00'} {t('ج.م', 'EGP')}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
+                  {t('عدد الأيام × قيمة اليوم', 'Days × daily rate')}
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 dark:bg-slate-900 dark:border-slate-800">
+                <p className="text-gray-500 dark:text-gray-400">
+                  {t('المتبقي المتوقّع حتى نهاية الشهر', 'Projected net until month end')}
+                </p>
+                <p className="text-lg font-bold text-emerald-700 mt-1 dark:text-emerald-200">
+                  {projectedNetSalary.toFixed(2)} {t('ج.م', 'EGP')}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
+                  {t(
+                    'مع افتراض عدم وجود غياب أو جزاءات إضافية',
+                    'Assuming no additional absences or penalties'
+                  )}
+                </p>
+              </div>
+            </section>
+
+            {/* Action + Result */}
+            <section className="grid gap-4 lg:grid-cols-2 items-start">
+              {/* Action */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5 dark:bg-slate-900 dark:border-slate-800">
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                  {t('تسجيل حضور/انصراف', 'Check-in / Check-out')}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
+                  {t('سيتم طلب إذن الموقع قبل إرسال الطلب.', 'Location permission will be requested before sending.')}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={processing}
+                  className={`mt-4 w-full text-sm font-semibold rounded-2xl px-4 py-3 border transition ${
+                    processing
+                      ? 'bg-gray-200 border-gray-200 text-gray-500 cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400'
+                      : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {processing ? t('جاري التسجيل...', 'Recording...') : t('تسجيل الآن', 'Record now')}
+                </button>
+
+                {error && (
+                  <div className="mt-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl px-3 py-2 dark:bg-red-900/30 dark:border-red-800 dark:text-red-100">
+                    {error}
+                  </div>
+                )}
+              </div>
+
+              {/* Result */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5 dark:bg-slate-900 dark:border-slate-800">
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                  {t('نتيجة آخر عملية', 'Last operation result')}
+                </p>
+
+                {!processing && !error && !result && (
+                  <div className="mt-3 bg-gray-50 border border-dashed border-gray-200 text-gray-500 text-xs rounded-2xl px-3 py-6 text-center dark:bg-slate-800/60 dark:border-slate-700 dark:text-gray-300">
+                    {t('لم يتم تسجيل أي عملية بعد.', 'No operation recorded yet.')}
+                  </div>
+                )}
+
+                {processing && (
+                  <div className="mt-3 bg-yellow-50 border border-yellow-200 text-yellow-800 text-xs rounded-2xl px-3 py-2 dark:bg-yellow-900/30 dark:border-yellow-800 dark:text-yellow-100">
+                    {t('جاري تسجيل الحضور/الانصراف...', 'Recording check-in/out...')}
+                  </div>
+                )}
+
+                {result && (
+                  <div
+                    className={`mt-3 rounded-2xl px-3 py-3 text-xs border ${
+                      isCheckin
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-100'
+                        : isCheckout
+                        ? 'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-100'
+                        : 'bg-gray-50 border-gray-200 text-gray-700 dark:bg-slate-800/60 dark:border-slate-700 dark:text-gray-200'
+                    }`}
+                  >
+                    <p className="font-semibold mb-1">{result.message || t('تمت العملية', 'Done')}</p>
+
+                    <div className="mt-2 space-y-1 text-[11px] opacity-95">
+                      {result.work_date && <p>{t('تاريخ اليوم:', 'Date:')} {result.work_date}</p>}
+                      {result.check_in && <p>{t('وقت الدخول:', 'Check-in:')} {fmtDateTime(result.check_in, locale)}</p>}
+                      {result.check_out && <p>{t('وقت الخروج:', 'Check-out:')} {fmtDateTime(result.check_out, locale)}</p>}
+
+                      {typeof result.is_late !== 'undefined' && result.is_late && (
+                        <p>
+                          {t('متأخر:', 'Late:')} {result.late_minutes || 0} {t('دقيقة', 'min')} •{' '}
+                          {t('غرامة:', 'Penalty:')} {result.penalty || 0} {t('ج.م', 'EGP')}
+                        </p>
+                      )}
+
+                      {typeof result.duration_minutes !== 'undefined' && result.duration_minutes !== null && (
+                        <p>{t('المدة بالدقائق:', 'Duration (min):')} {result.duration_minutes}</p>
+                      )}
+
+                      {result.gps && (
+                        <p>
+                          {t('الموقع المسجل:', 'Recorded location:')}{' '}
+                          {renderLocation(result.gps, isAr)}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="mt-2 text-[11px] text-gray-700 dark:text-gray-200">
+                      {isCheckin ? (
+                        <div>{t('تم تسجيل دخولك. المرة القادمة سيتم تسجيل الانصراف تلقائيًا.', 'Checked in. Next time will be a check-out automatically.')}</div>
+                      ) : isCheckout ? (
+                        <div>{t('تم تسجيل انصرافك. المرة القادمة سيتم تسجيل الحضور تلقائيًا.', 'Checked out. Next time will be a check-in automatically.')}</div>
+                      ) : null}
+
+                      {result?.is_late && (
+                        <div className="text-red-600 mt-2 dark:text-red-200">
+                          {t('تنبيه: تم رصد تأخير في هذه العملية. الرجاء الالتزام بموعد الشفت.', 'Warning: lateness detected in this operation. Please adhere to shift time.')}
+                        </div>
+                      )}
+
+                      {result?.usedCachedGps && (
+                        <div className="text-amber-700 mt-2 dark:text-amber-200">
+                          {t(
+                            'تم استخدام آخر موقع محفوظ لعدم القدرة على تحديد موقع جديد. يرجى تفعيل الموقع لتسجيل موقعك الحالي.',
+                            'Last saved location was used because a fresh location could not be obtained. Please enable location services.'
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Refresh status hint */}
+            <div className="text-[11px] text-gray-400 dark:text-gray-500">
+              {t('سيتم تحديث ملخصك تلقائيًا بعد كل عملية.', 'Your summary refreshes automatically after each operation.')}
+            </div>
           </div>
-        </section>        
+        </main>
       </div>
     </div>
   );

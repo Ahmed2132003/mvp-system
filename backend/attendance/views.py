@@ -165,10 +165,14 @@ def my_attendance_status(request):
         target_month = today.replace(day=1)
 
     month_start, month_end = _month_range(target_month)
+
+    # ✅ لا نحسب الغياب عن الأيام القادمة داخل نفس الشهر
+    effective_end = min(month_end, today)
+
     logs_qs = AttendanceLog.objects.filter(
         employee=employee, work_date__range=(month_start, month_end)
     )
-
+    
     present_days = set(
         logs_qs.exclude(check_in__isnull=True).values_list("work_date", flat=True)
     )
@@ -195,20 +199,20 @@ def my_attendance_status(request):
 
     # الأيام المتوقع حضورها (بعد تاريخ التعيين لو موجود)
     expected_start = max(month_start, employee.hire_date) if employee.hire_date else month_start
+    expected_end = effective_end
     expected_days = set()
     cur_day = expected_start
-    while cur_day <= month_end:
+    while cur_day <= expected_end:
         expected_days.add(cur_day)
         cur_day += timezone.timedelta(days=1)
-
     # الغياب = المتوقع - حضور - إجازات
     absent_days = len(expected_days - present_days - leave_days)
 
     salary = float(employee.salary or 0)
     daily_rate = salary / 30 if salary else 0
-    absence_penalties = daily_rate * absent_days
-    attendance_value = daily_rate * len(present_days)
-
+    absence_penalties = max(0.0, daily_rate * absent_days)
+    attendance_value = max(0.0, daily_rate * len(present_days))
+    
     store_settings = getattr(employee.store, "settings", None)    
     active_log = AttendanceLog.objects.active_for_employee(employee)
     today_log = (
@@ -216,6 +220,9 @@ def my_attendance_status(request):
         .order_by("-check_in")
         .first()
     )
+
+    remaining_work_days = max(0, (month_end - today).days)
+    projected_net_salary = attendance_value + (daily_rate * remaining_work_days) - total_penalties
 
     return Response(
         {
@@ -247,11 +254,13 @@ def my_attendance_status(request):
                 "absence_penalties": absence_penalties,
                 "attendance_value": attendance_value,
                 "daily_rate": daily_rate,
-                "estimated_net_salary": float(salary - total_penalties - absence_penalties),
+                "estimated_net_salary": max(0.0, float(salary - total_penalties - absence_penalties)),
+                "remaining_work_days": remaining_work_days,
+                "projected_net_salary": max(0.0, float(projected_net_salary)),
             },
         }
     )
-        
+            
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def qr_redirect(request):
