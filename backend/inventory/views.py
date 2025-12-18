@@ -9,7 +9,7 @@ from .models import Category, Item, Inventory
 from .serializers import CategorySerializer, ItemSerializer, InventorySerializer
 from .filters import CategoryFilter, ItemFilter, InventoryFilter
 from core.permissions import IsManager, IsEmployeeOfStore
-from core.utils.store_context import get_store_from_request
+from core.utils.store_context import get_store_from_request, get_branch_from_request
 from django.db import transaction
 from django.db.models import F
 
@@ -150,7 +150,11 @@ class InventoryViewSet(viewsets.ModelViewSet):
         qs = Inventory.objects.select_related('item', 'branch').filter(
             branch__store=store
         )
-                
+
+        branch = get_branch_from_request(self.request, store=store)
+        if branch:
+            qs = qs.filter(branch=branch)
+                            
         # فلتر حالة المخزون (status) من الـ query params: low / out
         status_param = self.request.query_params.get('status')
         if status_param == 'low':

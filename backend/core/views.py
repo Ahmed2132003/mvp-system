@@ -141,8 +141,8 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Employee.objects.select_related('user', 'store')
-
+        qs = Employee.objects.select_related('user', 'store', 'branch')
+        
         store_id = self.request.query_params.get('store_id')
         if store_id:
             qs = qs.filter(store_id=store_id)

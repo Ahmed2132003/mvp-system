@@ -7,8 +7,8 @@ from django.utils.html import format_html
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.db.models import Q
 
+from branches.models import Branch
 from .models import User, Employee, Store, StoreSettings
-
 
 def is_owner_or_superuser(request):
     """يرجع True فقط لو المستخدم OWNER أو superuser"""
@@ -147,15 +147,23 @@ class UserAdmin(BaseUserAdmin):
 # =========================
 @admin.register(Employee)
 class EmployeeAdmin(admin.ModelAdmin):
-    list_display = ("user", "store", "hire_date", "salary", "advances")
-    list_filter = ("store", "hire_date")
+    list_display = ("user", "store", "branch", "hire_date", "salary", "advances")
+    list_filter = ("store", "branch", "hire_date")
     search_fields = ("user__email", "user__name", "user__phone")
-    raw_id_fields = ("user", "store")
+    raw_id_fields = ("user", "store", "branch")
+    
+    readonly_fields = ("qr_attendance", "qr_attendance_base64")
 
     fieldsets = (
         ("الموظف", {"fields": ("user", "store")}),
         ("بيانات العمل", {"fields": ("hire_date", "salary", "advances")}),
-        ("QR Codes", {"fields": ("qr_code",), "classes": ("collapse",)}),  # ✅ فقط qr_code لو محتاجه
+        (
+            "QR Codes",
+            {
+                "fields": ("qr_attendance", "qr_attendance_base64"),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
     def has_module_permission(self, request):
@@ -197,8 +205,15 @@ class EmployeeAdmin(admin.ModelAdmin):
                 kwargs["queryset"] = Store.objects.filter(owner=request.user)
             else:
                 kwargs["queryset"] = Store.objects.none()
+        elif db_field.name == "branch":
+            if request.user.is_superuser:
+                kwargs["queryset"] = Branch.objects.all()
+            elif getattr(request.user, "role", None) == User.RoleChoices.OWNER:
+                kwargs["queryset"] = Branch.objects.filter(store__owner=request.user)
+            else:
+                kwargs["queryset"] = Branch.objects.none()
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
-
+    
 
 # =========================
 # Store Admin

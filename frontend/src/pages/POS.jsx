@@ -33,6 +33,7 @@ export default function POS() {
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [notes, setNotes] = useState('');
 
   const [cart, setCart] = useState([]);
@@ -445,6 +446,7 @@ const fetchBranches = useCallback(async () => {
     setCart([]);
     setCustomerName('');
     setCustomerPhone('');
+    setDeliveryAddress('');
     setNotes('');
     setSelectedTableId(null);
     setOrderType(ORDER_TYPES.DINE_IN);
@@ -461,9 +463,13 @@ const fetchBranches = useCallback(async () => {
   // إنشاء الطلب + الدفع كاش
   // --------------------------
   const createOrderPayload = () => {
+    const isDelivery = orderType === ORDER_TYPES.DELIVERY;
+
     return {
       customer_name: customerName || null,
       customer_phone: customerPhone || null,
+      delivery_address: isDelivery ? deliveryAddress : null,
+      order_type: isDelivery ? 'DELIVERY' : 'IN_STORE',
       table: orderType === ORDER_TYPES.DINE_IN ? selectedTableId : null,
       notes,
       status: 'PENDING',
@@ -475,7 +481,7 @@ const fetchBranches = useCallback(async () => {
   };
 
   const submitOrder = async (payNow = false) => {
-    if (cart.length === 0) {
+    if (cart.length === 0) {      
       const msg = isAr
         ? 'لا يمكن حفظ طلب بدون أصناف.'
         : 'Cannot save an order without items.';
@@ -485,7 +491,7 @@ const fetchBranches = useCallback(async () => {
       return;
     }
 
-    if (orderType === ORDER_TYPES.DINE_IN && !selectedTableId) {
+    if (orderType === ORDER_TYPES.DINE_IN && !selectedTableId) {      
       const msg = isAr
         ? 'من فضلك اختر طاولة (للطلبات داخل المحل).'
         : 'Please select a table for dine-in orders.';
@@ -495,17 +501,36 @@ const fetchBranches = useCallback(async () => {
       return;
     }
 
+    if (orderType === ORDER_TYPES.DELIVERY) {
+      if (!customerName.trim() || !customerPhone.trim() || !deliveryAddress.trim()) {
+        const msg =
+          isAr
+            ? 'الاسم، الهاتف، والعنوان مطلوبة لطلبات الدليفري.'
+            : 'Name, phone, and address are required for delivery orders.';
+        setStatusError(msg);
+        setStatusMessage(null);
+        showToast(msg, 'error');
+        return;
+      }
+    }
+
     setSaving(true);
     setStatusError(null);
     setStatusMessage(null);
 
     try {
       const payload = createOrderPayload();
-      const res = await api.post('/orders/', payload);
+      const res = await api.post('/orders/', payload, {
+        params: { store_id: selectedStoreId },
+      });
       const order = res.data;
 
       if (payNow && order?.id) {
-        await api.patch(`/orders/${order.id}/`, { status: 'PAID' });
+        await api.patch(
+          `/orders/${order.id}/`,
+          { status: 'PAID' },
+          { params: { store_id: selectedStoreId } }
+        );
       }
 
       const msg = payNow
@@ -546,34 +571,42 @@ const fetchBranches = useCallback(async () => {
     <div className="flex gap-2 mb-3">
       <button
         type="button"
-        onClick={() => setOrderType(ORDER_TYPES.DINE_IN)}
+        onClick={() => {
+          setOrderType(ORDER_TYPES.DINE_IN);
+        }}
         className={`flex-1 py-2 rounded-2xl text-xs font-semibold border ${
           orderType === ORDER_TYPES.DINE_IN
             ? 'bg-blue-600 text-white border-blue-600'
             : 'bg-white text-gray-700 border-gray-200 dark:bg-slate-950 dark:border-slate-700 dark:text-gray-100'
-        }`}
+        }`}        
       >
         {isAr ? 'داخل المحل' : 'Dine-in'}
       </button>
       <button
         type="button"
-        onClick={() => setOrderType(ORDER_TYPES.TAKEAWAY)}
+        onClick={() => {
+          setOrderType(ORDER_TYPES.TAKEAWAY);
+          setSelectedTableId(null);
+        }}
         className={`flex-1 py-2 rounded-2xl text-xs font-semibold border ${
           orderType === ORDER_TYPES.TAKEAWAY
             ? 'bg-blue-600 text-white border-blue-600'
             : 'bg-white text-gray-700 border-gray-200 dark:bg-slate-950 dark:border-slate-700 dark:text-gray-100'
-        }`}
+        }`}        
       >
         {isAr ? 'تيك أواي' : 'Takeaway'}
       </button>
       <button
         type="button"
-        onClick={() => setOrderType(ORDER_TYPES.DELIVERY)}
+        onClick={() => {
+          setOrderType(ORDER_TYPES.DELIVERY);
+          setSelectedTableId(null);
+        }}
         className={`flex-1 py-2 rounded-2xl text-xs font-semibold border ${
           orderType === ORDER_TYPES.DELIVERY
             ? 'bg-blue-600 text-white border-blue-600'
             : 'bg-white text-gray-700 border-gray-200 dark:bg-slate-950 dark:border-slate-700 dark:text-gray-100'
-        }`}
+        }`}        
       >
         {isAr ? 'دليفري' : 'Delivery'}
       </button>
@@ -591,24 +624,52 @@ const fetchBranches = useCallback(async () => {
 
       {/* بيانات العميل */}
       <div className="space-y-2 mb-3">
-        <input
-          type="text"
-          placeholder={
-            isAr ? 'اسم العميل (اختياري)' : 'Customer name (optional)'
-          }
-          value={customerName}
-          onChange={(e) => setCustomerName(e.target.value)}
-          className="w-full text-xs border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:text-gray-100"
-        />
-        <input
-          type="text"
-          placeholder={
-            isAr ? 'رقم الهاتف (اختياري)' : 'Phone number (optional)'
-          }
-          value={customerPhone}
-          onChange={(e) => setCustomerPhone(e.target.value)}
-          className="w-full text-xs border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:text-gray-100"
-        />
+        <div className="space-y-1">
+          <input
+            type="text"
+            placeholder={
+              orderType === ORDER_TYPES.DELIVERY
+                ? isAr
+                  ? 'اسم العميل (مطلوب للدليفري)'
+                  : 'Customer name (required for delivery)'
+                : isAr
+                ? 'اسم العميل (اختياري)'
+                : 'Customer name (optional)'
+            }
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            className="w-full text-xs border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:text-gray-100"
+          />
+          <input
+            type="text"
+            placeholder={
+              orderType === ORDER_TYPES.DELIVERY
+                ? isAr
+                  ? 'رقم الهاتف (مطلوب للدليفري)'
+                  : 'Phone number (required for delivery)'
+                : isAr
+                ? 'رقم الهاتف (اختياري)'
+                : 'Phone number (optional)'
+            }
+            value={customerPhone}
+            onChange={(e) => setCustomerPhone(e.target.value)}
+            className="w-full text-xs border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:text-gray-100"
+          />
+          {orderType === ORDER_TYPES.DELIVERY && (
+            <textarea
+              placeholder={
+                isAr
+                  ? 'عنوان التوصيل (مطلوب)' 
+                  : 'Delivery address (required)'
+              }
+              value={deliveryAddress}
+              onChange={(e) => setDeliveryAddress(e.target.value)}
+              rows={2}
+              className="w-full text-xs border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-none dark:bg-slate-950 dark:text-gray-100"
+            />
+          )}
+        </div>
+
         <textarea
           placeholder={
             isAr
@@ -923,9 +984,11 @@ const fetchBranches = useCallback(async () => {
                 <button
                   key={table.id}
                   type="button"
-                  onClick={() =>
-                    isAvailable ? setSelectedTableId(table.id) : null
-                  }
+                  onClick={() => {
+                    if (!isAvailable) return;
+                    setSelectedTableId(table.id);
+                    setOrderType(ORDER_TYPES.DINE_IN);
+                  }}                  
                   className={`rounded-2xl border p-3 text-right text-xs flex flex-col gap-1 ${
                     isSelected
                       ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40'

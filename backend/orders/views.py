@@ -20,8 +20,7 @@ from inventory.models import Item
 from core.models import Store
 
 # ✅ NEW: store switcher context
-from core.utils.store_context import get_store_from_request
-
+from core.utils.store_context import get_store_from_request, get_branch_from_request
 
 # =======================
 # Helpers
@@ -91,8 +90,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not store:
             return Order.objects.none()
 
-        return Order.objects.filter(store=store).prefetch_related("items__item", "payments")
+        qs = Order.objects.filter(store=store).prefetch_related("items__item", "payments")
 
+        branch = get_branch_from_request(self.request, store=store)
+        if branch:
+            qs = qs.filter(branch=branch)
+
+        return qs
+    
     def list(self, request, *args, **kwargs):
         try:
             return super().list(request, *args, **kwargs)
@@ -106,12 +111,12 @@ class OrderViewSet(viewsets.ModelViewSet):
             if not store:
                 raise ValidationError({"detail": "لا يوجد متجر مرتبط بهذا الحساب أو store_id غير صحيح."})
 
-            branch = store.branches.first()
+            branch = get_branch_from_request(self.request, store=store, allow_store_default=True)
             if not branch:
-                raise ValidationError({"detail": "لا يوجد فرع مرتبط بهذا المتجر."})
+                raise ValidationError({"detail": "لا يوجد فرع مرتبط بهذا الحساب."})
 
             serializer.save(store=store, branch=branch)
-
+            
     @action(detail=False, methods=["get"], url_path="kds")
     def kds_orders(self, request):
         qs = self.get_queryset().filter(

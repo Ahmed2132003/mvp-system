@@ -2,6 +2,7 @@
 
 from django.conf import settings
 from django.db import models
+from django.core.exceptions import ValidationError
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -256,6 +257,14 @@ class Employee(models.Model):
         related_name="employees",
     )
 
+    branch = models.ForeignKey(
+        "branches.Branch",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="employees",
+    )
+    
     # ✅ Attendance QR per-employee
     qr_attendance = models.ImageField(upload_to="employee_attendance_qr/", blank=True, null=True)
     qr_attendance_base64 = models.TextField(blank=True, null=True, editable=False)
@@ -269,6 +278,14 @@ class Employee(models.Model):
     def __str__(self):
         return f"{self.user.name or self.user.email} - {self.user.role}"
 
+    def clean(self):
+        super().clean()
+
+        if self.branch and self.store_id and self.branch.store_id != self.store_id:
+            raise ValidationError({
+                "branch": "يجب أن يكون الفرع تابعًا لنفس المتجر الخاص بالموظف."
+            })
+            
     def _generate_qr_image_and_base64(self, url: str):
         import base64
         from io import BytesIO
@@ -291,8 +308,11 @@ class Employee(models.Model):
         return buffer, base64_str, File(buffer)
 
     def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
+        # تأكيد تطابق الفرع مع المتجر قبل الحفظ
+        self.full_clean()
 
+        super().save(*args, **kwargs)
+        
         # ✅ Generate employee attendance QR if missing
         if not self.qr_attendance:
             # رابط الـ QR يفتح redirect عام لكنه يحتوي employee + store
