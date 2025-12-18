@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
+import { useStore } from '../hooks/useStore';
 import { notifyError, notifyInfo, notifySuccess } from '../lib/notifications';
 
 const ACTIVE_STATUSES = ['PENDING', 'PREPARING', 'READY'];
@@ -12,23 +13,25 @@ export default function KDS() {
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef(null);
   const audioContextRef = useRef(null);
-
+  const { selectedStoreId } = useStore();
   // -----------------------------
   // REST: تحميل الطلبات للـ KDS
   // -----------------------------
   const fetchKDSOrders = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.get('/orders/kds/');
+      const res = await api.get('/orders/kds/', {
+        params: selectedStoreId ? { store_id: selectedStoreId } : {},
+      });
       const results = Array.isArray(res.data) ? res.data : res.data.results || [];
       setOrders(results);
-    } catch (err) {
+    } catch (err) {      
       console.error('خطأ في تحميل طلبات KDS:', err);
       notifyError('حدث خطأ أثناء تحميل طلبات المطبخ، حاول تحديث الصفحة.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedStoreId]);
 
   // -----------------------------
   // Handlers لتحديث الـ state
@@ -175,8 +178,12 @@ export default function KDS() {
         prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
       );
 
-      await api.patch(`/orders/${orderId}/`, { status: newStatus });
-
+      await api.patch(
+        `/orders/${orderId}/`,
+        { status: newStatus },
+        { params: selectedStoreId ? { store_id: selectedStoreId } : {} }
+      );
+      
       let msg = '';
       if (newStatus === 'PREPARING') msg = 'تم بدء تحضير الطلب.';
       else if (newStatus === 'READY') msg = 'الطلب جاهز للتقديم.';
