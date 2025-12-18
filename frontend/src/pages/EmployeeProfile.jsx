@@ -115,8 +115,16 @@ export default function EmployeeProfile() {
   const [payrolls, setPayrolls] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editData, setEditData] = useState({ salary: '', advances: '', hire_date: '', store: null });
+  const [editData, setEditData] = useState({
+    salary: '',
+    advances: '',
+    hire_date: '',
+    store: null,
+    branch: null,
+  });
   const [stores, setStores] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -150,6 +158,7 @@ export default function EmployeeProfile() {
         advances: res.data.advances ?? '',
         hire_date: res.data.hire_date ?? '',
         store: res.data.store ?? null,
+        branch: res.data.branch ?? null,
       });
     } catch {
       notifyError(isAr ? 'فشل تحميل بيانات الموظف' : 'Failed to load employee data');
@@ -180,6 +189,35 @@ export default function EmployeeProfile() {
     }
   }, []);
 
+  const fetchBranches = useCallback(
+    async (storeId) => {
+      if (!storeId) {
+        setBranches([]);
+        setEditData((prev) => ({ ...prev, branch: null }));
+        return;
+      }
+
+      try {
+        setBranchesLoading(true);
+        const res = await api.get('/branches/', { params: { store_id: storeId } });
+        const results = Array.isArray(res.data) ? res.data : res.data.results || [];
+        setBranches(results);
+
+        setEditData((prev) => {
+          if (prev.branch && results.some((b) => b.id === prev.branch)) {
+            return prev;
+          }
+          return { ...prev, branch: results[0]?.id || null };
+        });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setBranchesLoading(false);
+      }
+    },
+    []
+  );
+
   const generatePayroll = async () => {
     try {
       const month = prompt(isAr ? 'أدخل أول يوم في الشهر (YYYY-MM-DD)' : 'Enter first day of month (YYYY-MM-DD)');
@@ -197,6 +235,10 @@ export default function EmployeeProfile() {
     fetchEmployee().finally(() => setLoading(false));
     fetchStores();
   }, [fetchEmployee, fetchStores]);
+
+  useEffect(() => {
+    fetchBranches(editData.store);
+  }, [editData.store, fetchBranches]);
 
   useEffect(() => {
     if (activeTab === 'attendance') fetchAttendance();
@@ -225,7 +267,8 @@ export default function EmployeeProfile() {
         advances: Number(editData.advances) || 0,
         hire_date: editData.hire_date || null,
         store: editData.store || null,
-      });
+        branch: editData.branch || null,
+      });      
       notifySuccess(isAr ? 'تم تحديث بيانات الموظف' : 'Employee updated');
       fetchEmployee();
     } catch (err) {
@@ -616,7 +659,7 @@ export default function EmployeeProfile() {
                                 <span className="text-gray-600 dark:text-gray-300">
                                   {isAr ? 'تاريخ التعيين' : 'Hire Date'}
                                 </span>
-                                <input
+                                <input                                
                                   type="date"
                                   className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
                                   value={editData.hire_date || ''}
@@ -626,7 +669,7 @@ export default function EmployeeProfile() {
 
                               <label className="space-y-1 text-xs">
                                 <span className="text-gray-600 dark:text-gray-300">
-                                  {isAr ? 'الفرع' : 'Branch'}
+                                  {isAr ? 'المتجر' : 'Store'}
                                 </span>
                                 <select
                                   className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
@@ -635,10 +678,11 @@ export default function EmployeeProfile() {
                                     setEditData({
                                       ...editData,
                                       store: e.target.value ? Number(e.target.value) : null,
+                                      branch: null,
                                     })
                                   }
                                 >
-                                  <option value="">{isAr ? 'اختر الفرع' : 'Select branch'}</option>
+                                  <option value="">{isAr ? 'اختر المتجر' : 'Select store'}</option>
                                   {stores.map((s) => (
                                     <option key={s.id} value={s.id}>
                                       {s.name}
@@ -646,8 +690,44 @@ export default function EmployeeProfile() {
                                   ))}
                                 </select>
                               </label>
-                            </div>
 
+                              <label className="space-y-1 text-xs">
+                                <span className="text-gray-600 dark:text-gray-300">
+                                  {isAr ? 'الفرع' : 'Branch'}
+                                </span>
+                                <select
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                  value={editData.branch || ''}
+                                  onChange={(e) =>
+                                    setEditData({
+                                      ...editData,
+                                      branch: e.target.value ? Number(e.target.value) : null,
+                                    })
+                                  }
+                                  disabled={!editData.store || branchesLoading}
+                                >
+                                  <option value="">{isAr ? 'اختر الفرع' : 'Select branch'}</option>
+                                  {branches.map((branch) => (
+                                    <option key={branch.id} value={branch.id}>
+                                      {branch.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                {branchesLoading && (
+                                  <p className="text-[11px] text-gray-500 mt-1">
+                                    {isAr ? 'جاري تحميل الفروع...' : 'Loading branches...'}
+                                  </p>
+                                )}
+                                {!branchesLoading && editData.store && branches.length === 0 && (
+                                  <p className="text-[11px] text-red-600 mt-1 dark:text-red-300">
+                                    {isAr
+                                      ? 'لا توجد فروع مرتبطة بهذا المتجر.'
+                                      : 'No branches found for this store.'}
+                                  </p>
+                                )}
+                              </label>
+                            </div>
+                            
                             <div className="mt-4 flex gap-3 flex-wrap">
                               <button
                                 onClick={updateEmployee}

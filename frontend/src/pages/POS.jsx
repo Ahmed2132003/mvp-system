@@ -59,6 +59,7 @@ export default function POS() {
 
   const [branches, setBranches] = useState([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
+  const [selectedBranchId, setSelectedBranchId] = useState(null);
 
   const [newItemModalOpen, setNewItemModalOpen] = useState(false);
   const [creatingItem, setCreatingItem] = useState(false);
@@ -152,29 +153,41 @@ export default function POS() {
     }
   }, [selectedStoreId]);
 
-const fetchBranches = useCallback(async () => {
-  if (!selectedStoreId) {
-    setBranches([]);
-    return;
-  }
+  const fetchBranches = useCallback(async () => {
+    if (!selectedStoreId) {
+      setBranches([]);
+      setSelectedBranchId(null);
+      return;
+    }
 
-  try {
-    setBranchesLoading(true);
-    const res = await api.get('/branches/', {
-      params: { store_id: selectedStoreId },
-    });
+    try {
+      setBranchesLoading(true);
+      const res = await api.get('/branches/', {
+        params: { store_id: selectedStoreId },
+      });
 
-    const results = Array.isArray(res.data)
-      ? res.data
-      : res.data.results || [];
+      const results = Array.isArray(res.data)
+        ? res.data
+        : res.data.results || [];
 
-    setBranches(results);
-  } catch (err) {
-    console.error('Error loading branches:', err);
-  } finally {
-    setBranchesLoading(false);
-  }
-}, [selectedStoreId]);
+      setBranches(results);
+      if (results.length > 0) {
+        const firstBranchId = results[0]?.id ? String(results[0].id) : null;
+        setSelectedBranchId((current) => {
+          if (current && results.some((b) => String(b.id) === String(current))) {
+            return String(current);
+          }
+          return firstBranchId;
+        });
+      } else {
+        setSelectedBranchId(null);
+      }
+    } catch (err) {
+      console.error('Error loading branches:', err);
+    } finally {
+      setBranchesLoading(false);
+    }
+  }, [selectedStoreId]);
 
   // --------------------------
   // جلب الأصناف والطاولات
@@ -481,10 +494,20 @@ const fetchBranches = useCallback(async () => {
   };
 
   const submitOrder = async (payNow = false) => {
-    if (cart.length === 0) {      
+    if (cart.length === 0) {
       const msg = isAr
         ? 'لا يمكن حفظ طلب بدون أصناف.'
-        : 'Cannot save an order without items.';
+        : 'Cannot save an order without items.';        
+      setStatusError(msg);
+      setStatusMessage(null);
+      showToast(msg, 'error');
+      return;
+    }
+
+    if (!selectedBranchId) {
+      const msg = isAr
+        ? 'يجب اختيار فرع مرتبط بالمتجر الحالي قبل إنشاء الطلب.'
+        : 'Please choose a branch for the current store before creating the order.';
       setStatusError(msg);
       setStatusMessage(null);
       showToast(msg, 'error');
@@ -521,7 +544,10 @@ const fetchBranches = useCallback(async () => {
     try {
       const payload = createOrderPayload();
       const res = await api.post('/orders/', payload, {
-        params: { store_id: selectedStoreId },
+        params: {
+          store_id: selectedStoreId,
+          branch: selectedBranchId ? Number(selectedBranchId) : undefined,
+        },
       });
       const order = res.data;
 
@@ -529,7 +555,12 @@ const fetchBranches = useCallback(async () => {
         await api.patch(
           `/orders/${order.id}/`,
           { status: 'PAID' },
-          { params: { store_id: selectedStoreId } }
+          {
+            params: {
+              store_id: selectedStoreId,
+              branch: selectedBranchId ? Number(selectedBranchId) : undefined,
+            },
+          }
         );
       }
 
@@ -546,12 +577,16 @@ const fetchBranches = useCallback(async () => {
       handleClearCart();
     } catch (err) {
       console.error('Error saving order:', err);
-      const msg = isAr
-        ? 'حدث خطأ أثناء حفظ الطلب، حاول مرة أخرى.'
-        : 'An error occurred while saving the order, please try again.';
+      const msg =
+        err.response?.data?.detail ||
+        err.response?.data?.branch?.[0] ||
+        err.response?.data?.non_field_errors?.[0] ||
+        (isAr
+          ? 'حدث خطأ أثناء حفظ الطلب، حاول مرة أخرى.'
+          : 'An error occurred while saving the order, please try again.');
       setStatusError(msg);
       showToast(msg, 'error');
-    } finally {
+    } finally {      
       setSaving(false);
     }
   };
@@ -620,8 +655,40 @@ const fetchBranches = useCallback(async () => {
           {isAr ? 'ملخص الطلب' : 'Order summary'}
         </h2>
         {renderOrderTypeButtons()}
-      </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div>
+            <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
+              {isAr ? 'الفرع للطلب' : 'Order branch'}
+            </label>
+            <select
+              value={selectedBranchId || ''}
+              onChange={(e) => setSelectedBranchId(e.target.value || null)}
+              className="w-full text-xs border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:bg-slate-950 dark:text-gray-100"
+            >
+              <option value="">{isAr ? 'اختر الفرع' : 'Select branch'}</option>
+              {branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+            {branchesLoading && (
+              <p className="text-[11px] text-gray-500 mt-1">
+                {isAr ? 'جاري تحميل الفروع...' : 'Loading branches...'}
+              </p>
+            )}
+            {!branchesLoading && branches.length === 0 && (
+              <p className="text-[11px] text-red-600 mt-1 dark:text-red-300">
+                {isAr
+                  ? 'لا يوجد فروع مرتبطة بالمتجر الحالي. لن يتم إنشاء الطلب بدون اختيار فرع.'
+                  : 'No branches found for this store. Select a branch to create orders.'}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+      
       {/* بيانات العميل */}
       <div className="space-y-2 mb-3">
         <div className="space-y-1">
