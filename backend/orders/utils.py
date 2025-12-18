@@ -1,9 +1,9 @@
-#backend/orders/utils.py  
+#backend/orders/utils.py
 
 from django.db import transaction
-from django.db.models import F
-from inventory.models import Inventory
 from django.core.exceptions import ValidationError
+from inventory.models import Inventory
+from core.models import StoreSettings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -13,8 +13,12 @@ def update_inventory_for_order(order, reverse=False):
     if order.status in ['PENDING', 'CANCELLED'] and not reverse:
         return
 
-    store_settings = order.store.store_settings
-    allow_without_stock = store_settings.allow_order_without_stock
+    try:
+        store_settings = order.store.settings
+        allow_without_stock = store_settings.allow_order_without_stock
+    except StoreSettings.DoesNotExist:
+        logger.warning("Store settings not found for %s. Defaulting to allow ordering without stock.", order.store)
+        allow_without_stock = True
 
     for order_item in order.items.all():
         try:
