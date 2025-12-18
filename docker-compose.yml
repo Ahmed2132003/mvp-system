@@ -70,7 +70,6 @@ services:
     environment:
       - NODE_ENV=development
       - VITE_API_BASE_URL=/api/v1
-      - PORT=5173
     depends_on:
       - backend
     restart: unless-stopped

@@ -9,10 +9,11 @@ export default defineConfig({
     strictPort: true,
     cors: true,
     open: false,
+
+    // مهم جداً مع nginx proxy
     hmr: {
       host: 'localhost',
-      clientPort: 3000,
-      port: 5173,
+      clientPort: 3000, // لأنك بتفتح من المتصفح على localhost:3000 (nginx)
       protocol: 'ws',
     },
   },
