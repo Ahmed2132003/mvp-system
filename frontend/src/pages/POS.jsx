@@ -4,11 +4,14 @@ import React, {
   useMemo,
   useState,
   useCallback,
+  useRef,
 } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { useStore } from '../hooks/useStore';
 import { useAuth } from '../hooks/useAuth';
+import { notifyInfo, notifySuccess } from '../lib/notifications';
+
 
 const ORDER_TYPES = {
   DINE_IN: 'DINE_IN',
@@ -40,6 +43,11 @@ export default function POS() {
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
   const [statusError, setStatusError] = useState(null);
+  const [kdsWsConnected, setKdsWsConnected] = useState(false);
+  const kdsWsRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const liveOrderStatusesRef = useRef({});
+  const hasAnnouncedKitchenRef = useRef(false);
 
   // Toast بسيط داخلي
   const [toast, setToast] = useState({
@@ -109,6 +117,82 @@ export default function POS() {
       setToast((prev) => ({ ...prev, open: false }));
     }, 3000);
   };
+
+  const playTone = useCallback((frequency = 880) => {
+    try {
+      if (!audioContextRef.current) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        audioContextRef.current = new AudioCtx();
+      }
+
+      const ctx = audioContextRef.current;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.value = frequency;
+
+      gainNode.gain.value = 0.08;
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.35);
+    } catch (error) {
+      console.error('تعذر تشغيل صوت الإشعار:', error);
+    }
+  }, []);
+
+  const statusLabels = useMemo(
+    () => ({
+      PENDING: isAr ? 'طلب جديد' : 'Pending',
+      PREPARING: isAr ? 'قيد التحضير' : 'Preparing',
+      READY: isAr ? 'جاهز للتسليم' : 'Ready',
+      SERVED: isAr ? 'تم التسليم' : 'Served',
+    }),
+    [isAr]
+  );
+
+  const handleKdsOrderEvent = useCallback(
+    (order, type) => {
+      if (!order || !order.id) return;
+
+      const ACTIVE = ['PENDING', 'PREPARING', 'READY', 'SERVED'];
+
+      const previousStatus = liveOrderStatusesRef.current[order.id];
+      const updated = { ...liveOrderStatusesRef.current };
+
+      if (!ACTIVE.includes(order.status)) {
+        if (previousStatus) {
+          delete updated[order.id];
+          liveOrderStatusesRef.current = updated;
+        }
+        return;
+      }
+
+      updated[order.id] = order.status;
+      liveOrderStatusesRef.current = updated;
+
+      if (type === 'order_created' && !previousStatus) {
+        const msg = isAr
+          ? `تم تسجيل طلب جديد #${order.id} وإرساله للمطبخ.`
+          : `Order #${order.id} has been sent to the kitchen.`;
+        notifySuccess(msg);
+        playTone(980);
+      } else if (previousStatus && previousStatus !== order.status) {
+        const label = statusLabels[order.status] || order.status;
+        const msg = isAr
+          ? `تم تحديث حالة الطلب #${order.id} إلى ${label}.`
+          : `Order #${order.id} moved to ${label}.`;
+        notifyInfo(msg);
+        playTone(order.status === 'READY' ? 1200 : 850);
+      }
+    },
+    [isAr, playTone, statusLabels]
+  );
 
   const resetNewItemForm = useCallback(() => {
     setNewItemForm({
@@ -258,6 +342,49 @@ export default function POS() {
     fetchCategories();
     fetchBranches();
   }, [fetchBranches, fetchCategories, fetchItems, fetchTables]);
+
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${protocol}://${window.location.host}/ws/kds/`;
+    const ws = new WebSocket(wsUrl);
+
+    kdsWsRef.current = ws;
+
+    ws.onopen = () => {
+      setKdsWsConnected(true);
+      if (!hasAnnouncedKitchenRef.current) {
+        notifyInfo(
+          isAr
+            ? 'تم الاتصال بالمطبخ، سيتم إشعارك بأي تحديثات.'
+            : 'Connected to kitchen, you will receive live updates.'
+        );
+        hasAnnouncedKitchenRef.current = true;
+      }
+    };
+
+    ws.onclose = () => {
+      setKdsWsConnected(false);
+    };
+
+    ws.onerror = () => {
+      setKdsWsConnected(false);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'order_created' || data.type === 'order_updated') {
+          handleKdsOrderEvent(data.order, data.type);
+        }
+      } catch (error) {
+        console.error('KDS message parse error:', error);
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [handleKdsOrderEvent, isAr]);
 
   useEffect(() => {
     const categoryNames = new Set(categoryOptions.map((cat) => cat.name));
@@ -1278,7 +1405,7 @@ export default function POS() {
               <div className="flex items-center text-[11px] border border-gray-200 rounded-full overflow-hidden dark:border-slate-700">
                 <button
                   type="button"
-                  onClick={() => setLanguage('en')}
+                  onClick={() => setLanguage('en')}                  
                   className={`px-2 py-1 ${
                     !isAr
                       ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
@@ -1300,9 +1427,25 @@ export default function POS() {
                 </button>
               </div>
 
+              <span
+                className={`text-[11px] px-3 py-1 rounded-full border ${
+                  kdsWsConnected
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-700'
+                    : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-700'
+                }`}
+              >
+                {kdsWsConnected
+                  ? isAr
+                    ? 'متصل بالمطبخ'
+                    : 'Kitchen live'
+                  : isAr
+                  ? 'لا يوجد اتصال بالمطبخ'
+                  : 'Kitchen offline'}
+              </span>
+
               {/* Theme toggle */}
               <button
-                type="button"
+                type="button"                
                 onClick={toggleTheme}
                 className="inline-flex items-center justify-center rounded-xl border border-gray-200 p-2 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
               >

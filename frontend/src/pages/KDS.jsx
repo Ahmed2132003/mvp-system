@@ -1,5 +1,5 @@
 // src/pages/KDS.jsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifyError, notifyInfo, notifySuccess } from '../lib/notifications';
@@ -11,11 +11,12 @@ export default function KDS() {
   const [loading, setLoading] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
   const wsRef = useRef(null);
+  const audioContextRef = useRef(null);
 
   // -----------------------------
   // REST: تحميل الطلبات للـ KDS
   // -----------------------------
-  const fetchKDSOrders = async () => {
+  const fetchKDSOrders = useCallback(async () => {
     try {
       setLoading(true);
       const res = await api.get('/orders/kds/');
@@ -27,7 +28,95 @@ export default function KDS() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // -----------------------------
+  // Handlers لتحديث الـ state
+  // -----------------------------
+  const playTone = useCallback((frequency = 920) => {
+    try {
+      if (!audioContextRef.current) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        audioContextRef.current = new AudioCtx();
+      }
+
+      const ctx = audioContextRef.current;
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      oscillator.type = 'sine';
+      oscillator.frequency.value = frequency;
+
+      gainNode.gain.value = 0.08;
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.4);
+    } catch (error) {
+      console.error('تعذر تشغيل صوت الإشعار:', error);
+    }
+  }, []);
+
+  const statusLabels = useMemo(
+    () => ({
+      PENDING: 'طلب جديد',
+      PREPARING: 'قيد التحضير',
+      READY: 'جاهز',
+      SERVED: 'تم التسليم',
+    }),
+    []
+  );
+
+  const handleOrderCreated = useCallback(
+    (order) => {
+      if (!ACTIVE_STATUSES.includes(order.status)) return;
+
+      setOrders((prev) => {
+        const exists = prev.some((o) => o.id === order.id);
+        if (exists) {
+          return prev.map((o) => (o.id === order.id ? order : o));
+        }
+
+        notifySuccess(`طلب جديد #${order.id} وصل إلى المطبخ.`);
+        playTone(980);
+        return [...prev, order];
+      });
+    },
+    [playTone]
+  );
+
+  const handleOrderUpdated = useCallback(
+    (order) => {
+      setOrders((prev) => {
+        const previous = prev.find((o) => o.id === order.id);
+
+        if (!ACTIVE_STATUSES.includes(order.status)) {
+          return prev.filter((o) => o.id !== order.id);
+        }
+
+        const exists = Boolean(previous);
+
+        if (!exists) {
+          notifySuccess(`طلب جديد #${order.id} وصل إلى المطبخ.`);
+          playTone(980);
+          return [...prev, order];
+        }
+
+        if (previous.status !== order.status) {
+          const label = statusLabels[order.status] || order.status;
+          notifyInfo(`تم تحديث الطلب #${order.id} إلى حالة: ${label}.`);
+          playTone(order.status === 'READY' ? 1200 : 860);
+        }
+
+        return prev.map((o) => (o.id === order.id ? order : o));
+      });
+    },
+    [playTone, statusLabels]
+  );
 
   // -----------------------------
   // WebSocket: اتصال لايف
@@ -36,9 +125,9 @@ export default function KDS() {
     fetchKDSOrders();
 
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsUrl = `${protocol}://localhost:8000/ws/kds/`;
-
+    const wsUrl = `${protocol}://${window.location.host}/ws/kds/`;
     const ws = new WebSocket(wsUrl);
+
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -75,33 +164,7 @@ export default function KDS() {
     return () => {
       ws.close();
     };
-  }, []);
-
-  // -----------------------------
-  // Handlers لتحديث الـ state
-  // -----------------------------
-  const handleOrderCreated = (order) => {
-    setOrders((prev) => {
-      if (!ACTIVE_STATUSES.includes(order.status)) return prev;
-
-      const exists = prev.some((o) => o.id === order.id);
-      if (exists) {
-        return prev.map((o) => (o.id === order.id ? order : o));
-      }
-      return [...prev, order];
-    });
-  };
-
-  const handleOrderUpdated = (order) => {
-    setOrders((prev) => {
-      if (!ACTIVE_STATUSES.includes(order.status)) {
-        return prev.filter((o) => o.id !== order.id);
-      }
-      const exists = prev.some((o) => o.id === order.id);
-      if (!exists) return [...prev, order];
-      return prev.map((o) => (o.id === order.id ? order : o));
-    });
-  };
+  }, [fetchKDSOrders, handleOrderCreated, handleOrderUpdated]);
 
   // -----------------------------
   // تغيير حالة الطلب من الـ UI
@@ -182,16 +245,12 @@ export default function KDS() {
                   className="flex items-center justify-between text-xs text-gray-800"
                 >
                   <span className="font-medium">{item.name}</span>
-                  <span className="text-[11px] text-gray-600">
-                    x {item.quantity}
-                  </span>
+                  <span className="text-[11px] text-gray-600">x {item.quantity}</span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-[11px] text-gray-400">
-              لا توجد تفاصيل أصناف متاحة.
-            </p>
+            <p className="text-[11px] text-gray-400">لا توجد تفاصيل أصناف متاحة.</p>
           )}
         </div>
 
@@ -202,9 +261,7 @@ export default function KDS() {
         )}
 
         <div className="flex items-center justify-between pt-1">
-          <span className="text-xs font-semibold text-gray-800">
-            {order.total} ج.م
-          </span>
+          <span className="text-xs font-semibold text-gray-800">{order.total} ج.م</span>
 
           <div className="flex gap-1">
             {column === 'PENDING' && (
@@ -259,9 +316,7 @@ export default function KDS() {
 
         <div className="flex-1 overflow-y-auto p-2 space-y-2">
           {loading ? (
-            <div className="text-xs text-gray-500 mt-2 text-center">
-              جاري التحميل...
-            </div>
+            <div className="text-xs text-gray-500 mt-2 text-center">جاري التحميل...</div>
           ) : list.length === 0 ? (
             <div className="text-xs text-gray-400 mt-2 text-center">
               لا توجد طلبات في هذه الحالة حاليًا.
