@@ -440,13 +440,13 @@ export default function InventoryPage() {
   
 
 const tableInventory = useMemo(() => {
-  // لو فيه فلتر فرع → نعرض كل السجلات بدون تجميع (عشان المستخدم عارف هو بيشوف فرع واحد)
+  // لو فيه فلتر فرع → نعرض كل السجلات بدون تجميع (عشان المستخدم عارف هو بيشوف فرع واحد)␊
   if (branchFilter) return visibleInventory;
 
-  // منع تكرار نفس الصنف في أكثر من صف عند عرض كل الفروع
+  // منع تكرار نفس الصنف في أكثر من صف عند عرض كل الفروع␊
   const map = new Map();
 
-  tableInventory.forEach((row) => {
+  visibleInventory.forEach((row) => {
     const key = row?.item?.id ?? row.id;
     const qty = Number(row.quantity || 0);
     const minStock = Number(row.min_stock || 0);
