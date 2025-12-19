@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from django.db.models import Sum, F, Count
+from django.db.models import Sum, F, Count, Q
 from django.db.models.functions import TruncHour, TruncDate, TruncMonth
 from django.db.utils import ProgrammingError, OperationalError
 from django.utils import timezone
@@ -56,19 +56,21 @@ def api_reports(request):
         today = timezone.now().date()
         week_ago = today - timedelta(days=7)
         month_ago = today - timedelta(days=30)
+        
+        paid_filter = Q(status='PAID') | Q(is_paid=True)
 
         # مبيعات اليوم / الأسبوع / الشهر (طلبات مدفوعة فقط)
-        daily_qs = Order.objects.filter(created_at__date=today, status='PAID')
-        weekly_qs = Order.objects.filter(created_at__date__gte=week_ago, status='PAID')
-        monthly_qs = Order.objects.filter(created_at__date__gte=month_ago, status='PAID')
-
+        daily_qs = Order.objects.filter(created_at__date=today).filter(paid_filter)
+        weekly_qs = Order.objects.filter(created_at__date__gte=week_ago).filter(paid_filter)
+        monthly_qs = Order.objects.filter(created_at__date__gte=month_ago).filter(paid_filter)
+        
         daily = daily_qs.aggregate(total=Sum('total'))['total'] or 0
         weekly = weekly_qs.aggregate(total=Sum('total'))['total'] or 0
         monthly = monthly_qs.aggregate(total=Sum('total'))['total'] or 0
 
         daily_orders_count = daily_qs.count()
-        total_orders = Order.objects.filter(status='PAID').count()
-
+        total_orders = Order.objects.filter(paid_filter).count()
+        
         avg_ticket = daily / daily_orders_count if daily_orders_count > 0 else 0
 
         # مبيعات اليوم موزعة على الساعات
@@ -106,7 +108,7 @@ def api_reports(request):
         # أعلى الأصناف مبيعًا
         top_items_qs = (
             OrderItem.objects
-            .filter(order__status='PAID')
+            .filter(Q(order__status='PAID') | Q(order__is_paid=True))            
             .values('item__name')
             .annotate(total_sold=Sum('quantity'))
             .order_by('-total_sold')[:5]

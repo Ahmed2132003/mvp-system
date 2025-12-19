@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import ValidationError
 
 from django.db import transaction
-from django.db.utils import ProgrammingError, OperationalError
+from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.shortcuts import get_object_or_404
@@ -120,12 +120,11 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="kds")
     def kds_orders(self, request):
         qs = self.get_queryset().filter(
-            status__in=["PENDING", "PREPARING", "READY"]
+            Q(status__in=["PENDING", "PREPARING", "READY"]) | Q(status="PAID", is_paid=True)
         ).order_by("created_at")
 
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
-
 
 # =======================
 # ReservationViewSet
