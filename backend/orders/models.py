@@ -150,7 +150,7 @@ class Order(models.Model):
         ('READY', 'Ready'),
         ('SERVED', 'Served'),
         ('PAID', 'Paid'),
-        ('CANCELLED', 'Cancelled'),
+        ('CANCELLED', 'Cancelled'),      
     ]
 
     ORDER_TYPE_CHOICES = [
@@ -170,9 +170,10 @@ class Order(models.Model):
     # ✅ جديد:
     order_type = models.CharField(max_length=20, choices=ORDER_TYPE_CHOICES, default='IN_STORE')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='CASH')
+    is_paid = models.BooleanField(default=False)
     delivery_address = models.TextField(blank=True, null=True)
 
-    customer_name = models.CharField(max_length=255, blank=True, null=True)
+    customer_name = models.CharField(max_length=255, blank=True, null=True)    
     customer_phone = models.CharField(max_length=20, blank=True, null=True)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
@@ -287,18 +288,19 @@ def prepare_inventory_change(sender, instance, **kwargs):
     old_status = old.status
     new_status = instance.status
 
-    # هل هيتحول من PENDING إلى PREPARING أو أي حالة تأكيد؟
-    if old_status == 'PENDING' and new_status in ['PREPARING', 'READY', 'PAID', 'SERVED']:
-        instance._deduct_stock = True
-    else:
-        instance._deduct_stock = False
+    # لو اتحولت الحالة لـ PAID نسجل الدفع بدون ما نخرج من دورة الـ KDS
+    if new_status == 'PAID' and not instance.is_paid:
+        instance.is_paid = True
 
-    # هل هيتحول إلى CANCELLED؟
-    if new_status == 'CANCELLED' and old_status != 'CANCELLED':
+    # خصم المخزون يحصل عند أول انتقال لـ READY فقط
+    instance._deduct_stock = old_status != 'READY' and new_status == 'READY'
+
+    # إرجاع المخزون فقط لو كان الطلب وصل READY أو أبعد
+    if new_status == 'CANCELLED' and old_status in ['READY', 'SERVED', 'PAID']:
         instance._return_stock = True
     else:
         instance._return_stock = False
-
+        
 
 @receiver(post_save, sender=Order)
 def execute_inventory_change(sender, instance, created, **kwargs):
@@ -326,9 +328,10 @@ def serialize_order_for_kds(order: Order):
         "table_number": order.table.number if order.table else None,
         "customer_name": order.customer_name,
         "total": float(order.total),
+        "is_paid": order.is_paid,
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "notes": order.notes,        
-        "items": [
+        "items": [            
             {
                 "id": oi.id,
                 "name": oi.item.name,

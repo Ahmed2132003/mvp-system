@@ -1,6 +1,8 @@
 from django.test import TestCase
 from django.utils import timezone
-from .models import Table, Reservation, Store 
+
+from core.models import Store
+from .models import Reservation, Table
 class ReservationTestCase(TestCase):
     def setUp(self):
         self.store = Store.objects.create(name='Test Store')

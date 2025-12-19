@@ -57,10 +57,11 @@ class OrderAdmin(admin.ModelAdmin):
         'table',
         'customer_name',
         'status',
+        'is_paid',
         'total',
         'created_at',
     )
-    list_filter = ('store', 'branch', 'status', 'created_at')
+    list_filter = ('store', 'branch', 'status', 'is_paid', 'created_at')    
     search_fields = ('id', 'customer_name', 'customer_phone', 'table__number')
     date_hierarchy = 'created_at'
     readonly_fields = (
