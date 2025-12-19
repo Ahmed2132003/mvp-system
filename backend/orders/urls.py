@@ -10,6 +10,8 @@ from .views import (
     PublicTableOrderCreateView,
     PublicStoreMenuView,          # ✅ جديد
     PublicStoreOrderCreateView,   # ✅ جديد
+    PublicStoreTablesView,
+    PublicReservationCreateView,
 )
 
 router = DefaultRouter()
@@ -38,10 +40,20 @@ urlpatterns = [
         name='public-store-menu',
     ),
     path(
+        'public/store/<int:store_id>/tables/',
+        PublicStoreTablesView.as_view(),
+        name='public-store-tables',
+    ),
+    path(
+        'public/store/<int:store_id>/reservation/',
+        PublicReservationCreateView.as_view(),
+        name='public-store-reservation',
+    ),
+    path(
         'public/store/<int:store_id>/order/',
         PublicStoreOrderCreateView.as_view(),
         name='public-store-order',
-    ),
+    ),    
 ]
 
 urlpatterns += router.urls

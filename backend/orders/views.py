@@ -119,7 +119,7 @@ class TableViewSet(viewsets.ModelViewSet):
     serializer_class = TableSerializer
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ["number"]
-    ordering_fields = ["number", "capacity", "is_available"]
+    ordering_fields = ["number", "capacity", "is_available"]    
     ordering = ["number"]
 
     def get_permissions(self):
@@ -136,7 +136,11 @@ class TableViewSet(viewsets.ModelViewSet):
         if not store:
             return Table.objects.none()
 
-        return Table.objects.filter(store=store).order_by("number")
+        branch = get_branch_from_request(self.request, store=store, allow_store_default=False)
+        qs = Table.objects.filter(store=store)
+        if branch:
+            qs = qs.filter(Q(branch=branch) | Q(branch__isnull=True))
+        return qs.order_by("number")
 
     def perform_create(self, serializer):
         """
@@ -149,8 +153,9 @@ class TableViewSet(viewsets.ModelViewSet):
             raise ValidationError(
                 {"detail": "لا يوجد متجر مرتبط بهذا الحساب أو store_id غير صحيح."}
             )
-        serializer.save(store=store)
-
+        branch = get_branch_from_request(self.request, store=store, allow_store_default=True)
+        serializer.save(store=store, branch=branch)
+        
 
 # =======================
 # OrderViewSet (لوحة الكاشير / التقارير)
@@ -260,10 +265,12 @@ class ReservationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        branch = get_branch_from_request(request, store=store, allow_store_default=True)
+
         reservation_time = request.query_params.get("time")
         if not reservation_time:
             return Response(
-                {"detail": "يجب تحديد وقت الحجز (time)."},
+                {"detail": "يجب تحديد وقت الحجز (time)."},                
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -278,26 +285,44 @@ class ReservationViewSet(viewsets.ModelViewSet):
         duration = int(request.query_params.get("duration", 60))
         party_size = int(request.query_params.get("party_size", 1))
 
-        qs = (
-            Table.objects.at_store(store)
-            .available_at_time(res_time, duration)
-            .for_capacity(party_size)
-            .order_by("number")
-        )
+        qs = Table.objects.at_store(store)
+        if branch:
+            qs = qs.at_branch(branch)
 
-        serializer = TableSerializer(qs, many=True)
+        qs = qs.available_at_time(res_time, duration).for_capacity(party_size).order_by("number")
+        availability_map = {table.id: True for table in qs}
+
+        serializer = TableSerializer(qs, many=True, context={"availability_map": availability_map})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 # =======================
 # Public Endpoints للـ QR Menu (بدون Auth)
 # =======================
+def _build_availability_map(qs, reservation_time=None, duration=60):
+    """
+    Helper to annotate availability per table id.
+    If reservation_time not provided, returns empty map.
+    """
+    if not reservation_time:
+        return {}
+
+    try:
+        duration_val = int(duration)
+    except (TypeError, ValueError):
+        duration_val = 60
+
+    available_qs = Table.objects.available_at_time(reservation_time, duration_val)
+    available_ids = set(available_qs.values_list("id", flat=True))
+    return {table.id: table.id in available_ids for table in qs}
+
+
 class PublicTableMenuView(APIView):
     """
     يرجع بيانات الفرع + الطاولة + قائمة الأصناف للعميل (QR menu)
     """
     permission_classes = [AllowAny]
-
+    
     def get(self, request, table_id):
         table = get_object_or_404(
             Table.objects.select_related("store"),
@@ -432,12 +457,106 @@ class PublicTableOrderCreateView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+class PublicStoreTablesView(APIView):
+    """
+    إرجاع طاولات الفرع (بدون Auth) مع حالة التوفر للوقت المطلوب
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, store_id):
+        store = get_object_or_404(Store, pk=store_id)
+        branch_id = request.query_params.get("branch_id") or request.query_params.get("branch")
+        branch = select_branch_for_store(store, branch_id)
+
+        qs = Table.objects.at_store(store).filter(is_active=True)
+        if branch:
+            qs = qs.at_branch(branch)
+
+        res_time_param = request.query_params.get("time")
+        duration = request.query_params.get("duration", 60)
+        availability_map = {}
+        if res_time_param:
+            res_time = ensure_aware(parse_datetime(res_time_param))
+            if not res_time:
+                return Response({"detail": "صيغة الوقت غير صحيحة."}, status=status.HTTP_400_BAD_REQUEST)
+            availability_map = _build_availability_map(qs, res_time, duration)
+
+        serializer = TableSerializer(
+            qs.order_by("number"),
+            many=True,
+            context={"availability_map": availability_map},
+        )
+
+        return Response(
+            {
+                "store": {"id": store.id, "name": store.name},
+                "branch": {"id": branch.id, "name": branch.name} if branch else None,
+                "tables": serializer.data,
+            }
+        )
+
+
+class PublicReservationCreateView(APIView):
+    """
+    إنشاء حجز طاولة من المنيو العام بدون تسجيل دخول
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, store_id):
+        store = get_object_or_404(Store, pk=store_id)
+        table_id = request.data.get("table")
+        if not table_id:
+            return Response({"detail": "يجب اختيار الطاولة."}, status=status.HTTP_400_BAD_REQUEST)
+
+        table = get_object_or_404(Table, pk=table_id, store=store, is_active=True)
+
+        branch_id = request.data.get("branch_id") or request.data.get("branch")
+        branch = select_branch_for_store(store, branch_id)
+        if branch and table.branch_id and table.branch_id != branch.id:
+            return Response({"detail": "هذه الطاولة ليست ضمن هذا الفرع."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            party_size = int(request.data.get("party_size") or 1)
+        except (TypeError, ValueError):
+            party_size = 1
+        if party_size > table.capacity:
+            return Response({"detail": "عدد الأشخاص أكبر من سعة الطاولة."}, status=status.HTTP_400_BAD_REQUEST)
+
+        reservation_time_param = request.data.get("reservation_time")
+        reservation_time = ensure_aware(parse_datetime(reservation_time_param))
+        if not reservation_time:
+            return Response({"detail": "صيغة الوقت غير صحيحة."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            duration = int(request.data.get("duration") or 60)
+        except (TypeError, ValueError):
+            duration = 60
+        availability_map = _build_availability_map([table], reservation_time, duration)
+        if not availability_map.get(table.id):
+            return Response({"detail": "الطاولة غير متاحة في هذا الوقت."}, status=status.HTTP_400_BAD_REQUEST)
+
+        notes = request.data.get("notes") or ""
+        reservation = Reservation.objects.create(
+            table=table,
+            customer_name=request.data.get("customer_name") or "Guest",
+            customer_phone=request.data.get("customer_phone") or "",
+            reservation_time=reservation_time,
+            party_size=party_size,
+            status="CONFIRMED",
+            duration=duration,
+            notes=notes,
+        )
+
+        serializer = ReservationSerializer(reservation)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
 class PublicStoreMenuView(APIView):
     """
     يرجع بيانات الفرع + قائمة الأصناف للمنيو العام (بدون طاولة)
     """
     permission_classes = [AllowAny]
-
+    
     def get(self, request, store_id):
         store = get_object_or_404(Store, pk=store_id)
         branch_id = request.query_params.get("branch_id")

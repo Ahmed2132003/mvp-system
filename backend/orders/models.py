@@ -12,9 +12,14 @@ from django.core.exceptions import ValidationError
 import base64
 
 class TableQuerySet(models.QuerySet):
+    def at_branch(self, branch):
+        if branch is None:
+            return self
+        return self.filter(models.Q(branch=branch) | models.Q(branch__isnull=True))
+
     def available(self):
         return self.filter(is_available=True)
-
+    
     def at_store(self, store):
         return self.filter(store=store)
 
@@ -40,9 +45,12 @@ class TableManager(models.Manager):
     def available(self, *args, **kwargs):
         return self.get_queryset().available(*args, **kwargs)
 
+    def at_branch(self, *args, **kwargs):
+        return self.get_queryset().at_branch(*args, **kwargs)
+
     def at_store(self, *args, **kwargs):
         return self.get_queryset().at_store(*args, **kwargs)
-
+    
     def for_capacity(self, *args, **kwargs):
         return self.get_queryset().for_capacity(*args, **kwargs)
 
@@ -51,8 +59,9 @@ class TableManager(models.Manager):
 
 class Table(models.Model):
     store = models.ForeignKey('core.Store', on_delete=models.CASCADE, related_name='tables')
+    branch = models.ForeignKey('branches.Branch', on_delete=models.CASCADE, related_name='tables', null=True, blank=True)
     number = models.CharField(max_length=20)  # رقم الطاولة
-    capacity = models.PositiveSmallIntegerField(default=4)
+    capacity = models.PositiveSmallIntegerField(default=4)    
     qr_code = models.ImageField(upload_to='qr_codes/', blank=True, null=True)
     is_active = models.BooleanField(default=True)
     is_available = models.BooleanField(default=True)
@@ -60,11 +69,12 @@ class Table(models.Model):
     qr_code_base64 = models.TextField(blank=True, null=True, editable=False)
 
     class Meta:
-        unique_together = ('store', 'number')
+        unique_together = ('store', 'branch', 'number')
 
     def __str__(self):
-        return f"Table {self.number} - {self.store.name}"
-
+        branch_label = f" - {self.branch.name}" if self.branch else ""
+        return f"Table {self.number}{branch_label} - {self.store.name}"
+    
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         super().save(*args, **kwargs)  # نحفظ الأول عشان نضمن الـ ID

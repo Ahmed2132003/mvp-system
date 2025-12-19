@@ -661,7 +661,7 @@ export default function SettingsPage() {
                           )}
                         </div>
                       )}
-                                            
+
                       {/* Store Attendance QR (موحّد للحضور والانصراف) */}
                       {store?.qr_attendance_base64 && (
                         <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl p-4">
@@ -723,8 +723,49 @@ export default function SettingsPage() {
                       )}
                     </div>
 
-                    <hr className="my-3 border-gray-100 dark:border-slate-800" />
+                    {/* مشاركة الروابط والـ QR */}
+                    <div className="bg-white dark:bg-slate-900 border border-blue-100 dark:border-slate-800 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+                            {isAr ? 'المشاركة' : 'Sharing'}
+                          </h4>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                            {isAr
+                              ? 'انسخ روابط المنيو واطبع كود الـ QR لمشاركتها مع العملاء.'
+                              : 'Copy menu links and share the QR code with customers.'}
+                          </p>
+                        </div>
+                        {store?.qr_menu_base64 && (
+                          <img
+                            alt="Store Menu QR"
+                            className="w-16 h-16 rounded-lg border border-gray-200 dark:border-slate-700 bg-white"
+                            src={`data:image/png;base64,${store.qr_menu_base64}`}
+                          />
+                        )}
+                      </div>
 
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-gray-700 dark:text-gray-200">
+                          <span className="truncate">{storeMenuUrl}</span>
+                          <button
+                            type="button"
+                            onClick={() => copyValue(storeMenuUrl, isAr ? 'تم نسخ رابط المنيو' : 'Menu link copied')}
+                            className="px-3 py-1 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                          >
+                            {isAr ? 'نسخ' : 'Copy'}
+                          </button>
+                        </div>
+                        <div className="flex items-start gap-2 text-[11px] text-gray-600 dark:text-gray-300">
+                          <span className="font-semibold">{isAr ? 'قالب منيو الطاولة:' : 'Table menu template:'}</span>
+                          <span className="font-mono bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-lg px-2 py-1 break-all">
+                            {tableMenuTemplate}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <hr className="my-3 border-gray-100 dark:border-slate-800" />
                     <form onSubmit={saveStoreSettings} className="grid gap-4 md:grid-cols-2">
                       <div>
                         <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">

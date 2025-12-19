@@ -6,59 +6,9 @@ import React, {
   useCallback,
   useRef,
 } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import api from '../lib/api';
 import { notifySuccess, notifyError } from '../lib/notifications';
-
-// =====================
-// Sidebar Navigation (نفس الداشبورد)
-// =====================
-function SidebarNav({ lang, current }) {
-  const isAr = lang === 'ar';
-
-  const itemClass = (path) =>
-    `flex items-center justify-between px-3 py-2 rounded-xl text-sm transition ${
-      current === path
-        ? 'font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200'
-        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-slate-800'
-    }`;
-
-  return (
-    <>
-      <Link to="/dashboard" className={itemClass('/dashboard')}>
-        <span>{isAr ? 'الداشبورد' : 'Dashboard'}</span>
-      </Link>
-
-      <Link to="/pos" className={itemClass('/pos')}>
-        {isAr ? 'شاشة الكاشير (POS)' : 'Cashier Screen (POS)'}
-      </Link>
-
-      <Link to="/inventory" className={itemClass('/inventory')}>
-        {isAr ? 'إدارة المخزون' : 'Inventory Management'}
-      </Link>
-
-      <Link to="/attendance" className={itemClass('/attendance')}>
-        {isAr ? 'الحضور والانصراف' : 'Attendance'}
-      </Link>
-
-      <Link to="/reservations" className={itemClass('/reservations')}>
-        {isAr ? 'الحجوزات' : 'Reservations'}
-      </Link>
-
-      <Link to="/reports" className={itemClass('/reports')}>
-        {isAr ? 'التقارير' : 'Reports'}
-      </Link>
-
-      <Link to="/settings" className={itemClass('/settings')}>
-        {isAr ? 'الإعدادات' : 'Settings'}
-      </Link>
-
-      <Link to="/users/create" className={itemClass('/users/create')}>
-        {isAr ? 'إدارة المستخدمين' : 'User Management'}
-      </Link>
-    </>
-  );
-}
 
 export default function StoreMenu() {
   const { storeId } = useParams();
@@ -70,7 +20,6 @@ export default function StoreMenu() {
   const [lang, setLang] = useState(
     () => localStorage.getItem('lang') || 'ar'
   );
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const isAr = lang === 'ar';
 
@@ -94,7 +43,8 @@ export default function StoreMenu() {
     document.documentElement.dir = isAr ? 'rtl' : 'ltr';
   }, [lang, isAr]);
 
-  const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  const toggleTheme = () =>
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   const setLanguage = (lng) => setLang(lng);
 
   // ============ State الأساسي ============
@@ -119,7 +69,22 @@ export default function StoreMenu() {
   const [orderType, setOrderType] = useState('IN_STORE'); // IN_STORE | DELIVERY
   const [paymentMethod, setPaymentMethod] = useState('CASH'); // CASH | PAYMOB
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [tableMenuCode, setTableMenuCode] = useState('');
+  const [tables, setTables] = useState([]);
+  const [tablesLoading, setTablesLoading] = useState(false);
+  const [reservingTableId, setReservingTableId] = useState(null);
+
+  const defaultReservationLocal = () => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() + 30);
+    const tzOffset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - tzOffset).toISOString().slice(0, 16);
+  };
+
+  const [tableFilters, setTableFilters] = useState({
+    datetime: defaultReservationLocal(),
+    partySize: 2,
+    duration: 60,
+  });
 
   const [submitting, setSubmitting] = useState(false);
   const [successOrder, setSuccessOrder] = useState(null);
@@ -141,7 +106,6 @@ export default function StoreMenu() {
     async (branchId = null) => {
       try {
         setLoading(true);
-        setError(null);
 
         const res = await api.get(`/orders/public/store/${storeId}/menu/`, {
           params: branchId ? { branch_id: branchId } : undefined,
@@ -171,6 +135,43 @@ export default function StoreMenu() {
   useEffect(() => {
     if (storeId) fetchMenu(selectedBranchId);
   }, [storeId, fetchMenu, selectedBranchId]);
+
+  const reservationIso = useMemo(
+    () => (tableFilters.datetime ? new Date(tableFilters.datetime).toISOString() : null),
+    [tableFilters.datetime]
+  );
+
+  const fetchTablesAvailability = useCallback(
+    async () => {
+      if (!storeId || !selectedBranchId) return;
+      try {
+        setTablesLoading(true);
+        const res = await api.get(`/orders/public/store/${storeId}/tables/`, {
+          params: {
+            branch_id: selectedBranchId,
+            time: reservationIso || undefined,
+            duration: tableFilters.duration,
+            party_size: tableFilters.partySize,
+          },
+        });
+        setTables(res.data?.tables || []);
+      } catch (err) {
+        console.error('خطأ في تحميل الطاولات:', err);
+        const msg = isAr ? 'تعذر تحميل الطاولات المتاحة للفرع.' : 'Failed to load branch tables.';
+        notifyError(msg);
+        setTables([]);
+      } finally {
+        setTablesLoading(false);
+      }
+    },
+    [storeId, selectedBranchId, reservationIso, tableFilters.duration, tableFilters.partySize, isAr]
+  );
+
+  useEffect(() => {
+    if (selectedBranchId) {
+      fetchTablesAvailability();
+    }
+  }, [selectedBranchId, fetchTablesAvailability]);
 
   // ✅ لو PayMob مش enabled رجع CASH تلقائي
   useEffect(() => {
@@ -288,16 +289,45 @@ export default function StoreMenu() {
     }
   };
 
-  const handleOpenTableMenu = () => {
-    if (!tableMenuCode.trim()) {
-      notifyError(isAr ? 'ادخل رقم أو كود الطاولة أولًا.' : 'Enter a table code first.');
-      return;
-    }
+  const handleTableFilterChange = (key, value) => {
+    setTableFilters((prev) => ({ ...prev, [key]: value }));
+  };
 
-    const target = `/table/${tableMenuCode.trim()}/menu`;
+  const handleOpenTableMenu = (tableId) => {
+    const target = `/table/${tableId}/menu${selectedBranchId ? `?branch=${selectedBranchId}` : ''}`;
     window.open(target, '_blank');
   };
-  
+
+  const handleReserveTable = async (tableId) => {
+    if (!reservationIso) {
+      notifyError(isAr ? 'حدد وقت الحجز أولًا.' : 'Select reservation time first.');
+      return;
+    }
+    try {
+      setReservingTableId(tableId);
+      await api.post(`/orders/public/store/${storeId}/reservation/`, {
+        table: tableId,
+        branch_id: selectedBranchId,
+        reservation_time: reservationIso,
+        duration: Number(tableFilters.duration) || 60,
+        party_size: Number(tableFilters.partySize) || 1,
+        customer_name: customerName || 'Guest',
+        customer_phone: customerPhone || '',
+        notes,
+      });
+      notifySuccess(isAr ? 'تم حجز الطاولة بنجاح.' : 'Table reserved successfully.');
+      fetchTablesAvailability();
+    } catch (err) {
+      console.error('reservation error:', err);
+      const msg =
+        err?.response?.data?.detail ||
+        (isAr ? 'تعذر حجز الطاولة، حاول مرة أخرى.' : 'Could not reserve the table, please try again.');
+      notifyError(msg);
+    } finally {
+      setReservingTableId(null);
+    }
+  };
+
   const subtotal = useMemo(
     () => cart.reduce((sum, row) => sum + row.subtotal, 0),
     [cart]
@@ -363,7 +393,7 @@ export default function StoreMenu() {
         isAr
           ? `تم إرسال الطلب بنجاح! رقم الطلب #${res.data.id}`
           : `Order sent successfully! Order #${res.data.id}`
-      ); // ✅ الإغلاق الناقص كان هنا
+      );
 
       // ⚠️ مبدئيًا، الدفع عبر PayMob هيكون خطوة منفصلة قدام
     } catch (err) {
@@ -512,593 +542,626 @@ export default function StoreMenu() {
   // ============ UI ============
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 dark:text-gray-50">
-      <div className="flex min-h-screen">
-        {/* Sidebar - Desktop */}
-        <aside className="hidden md:flex w-64 flex-col bg-white border-l border-gray-200 shadow-sm dark:bg-slate-900 dark:border-slate-800">
-          <div className="px-6 py-5 border-b dark:border-slate-800">
-            <h1 className="text-xl font-bold text-primary dark:text-blue-300">
-              MVP POS
-            </h1>
-            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
-              {isAr ? 'منيو الطلبات (QR)' : 'Store menu (QR)'}
-            </p>
-          </div>
-
-          <nav className="flex-1 px-3 py-4 space-y-1">
-            <SidebarNav lang={lang} current="/store-menu" />
-          </nav>
-
-          <div className="px-4 py-4 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-            {isAr ? 'نسخة تجريبية • جاهز للانطلاق 🚀' : 'Beta version • Ready to launch 🚀'}
-          </div>
-        </aside>
-
-        {/* Sidebar - Mobile (Overlay) */}
-        {mobileSidebarOpen && (
-          <div className="fixed inset-0 z-40 flex md:hidden" aria-modal="true">
-            <div
-              className="fixed inset-0 bg-black/40"
-              onClick={() => setMobileSidebarOpen(false)}
-            />
-            <div className="relative ml-auto h-full w-64 bg-white shadow-xl border-l border-gray-200 flex flex-col dark:bg-slate-900 dark:border-slate-800">
-              <div className="px-4 py-4 border-b flex items-center justify-between dark:border-slate-800">
-                <div>
-                  <h2 className="text-base font-bold text-primary dark:text-blue-300">
-                    MVP POS
-                  </h2>
-                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
-                    {isAr ? 'القائمة الرئيسية' : 'Main Menu'}
+      <main className="flex-1 flex flex-col">
+        {/* Top bar */}
+        <header className="flex items-center justify-between px-4 md:px-8 py-4 bg-white border-b border-gray-200 sticky top-0 z-20 dark:bg-slate-900 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="min-w-0">
+              <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-gray-50 truncate">
+                {store.name}
+              </h2>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                {store.address && (
+                  <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400 truncate">
+                    {store.address}
                   </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setMobileSidebarOpen(false)}
-                  className="inline-flex items-center justify-center rounded-full p-1.5 border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-slate-700 dark:text-gray-300 dark:hover:bg-slate-800"
-                >
-                  <span className="sr-only">{isAr ? 'إغلاق القائمة' : 'Close menu'}</span>
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" stroke="currentColor" fill="none">
-                    <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                <SidebarNav lang={lang} current="/store-menu" />
-              </nav>
-
-              <div className="px-4 py-3 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-                {isAr ? 'نسخة تجريبية • جاهز للانطلاق 🚀' : 'Beta version • Ready to launch 🚀'}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Main */}
-        <main className="flex-1 flex flex-col">
-          {/* Top bar */}
-          <header className="flex items-center justify-between px-4 md:px-8 py-4 bg-white border-b border-gray-200 sticky top-0 z-20 dark:bg-slate-900 dark:border-slate-800">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="inline-flex md:hidden items-center justify-center rounded-xl border border-gray-200 p-2 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
-                onClick={() => setMobileSidebarOpen(true)}
-              >
-                <span className="sr-only">{isAr ? 'فتح القائمة' : 'Open menu'}</span>
-                <svg className="h-5 w-5" viewBox="0 0 24 24" stroke="currentColor" fill="none">
-                  <path strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-
-              <div className="min-w-0">
-                <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-gray-50 truncate">
-                  {store.name}
-                </h2>
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  {store.address && (
-                    <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400 truncate">
-                      {store.address}
-                    </p>
-                  )}
-                  {selectedBranch && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
-                      {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              {/* Language */}
-              <div className="flex items-center text-[11px] border border-gray-200 rounded-full overflow-hidden dark:border-slate-700">
-                <button
-                  type="button"
-                  onClick={() => setLanguage('en')}
-                  className={`px-2 py-1 ${
-                    !isAr
-                      ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
-                      : 'text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  EN
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setLanguage('ar')}
-                  className={`px-2 py-1 ${
-                    isAr
-                      ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
-                      : 'text-gray-600 dark:text-gray-300'
-                  }`}
-                >
-                  AR
-                </button>
-              </div>
-
-              {/* Theme */}
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="inline-flex items-center justify-center rounded-xl border border-gray-200 p-2 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
-              >
-                {theme === 'dark' ? (
-                  <span className="flex items-center gap-1 text-[11px]">
-                    <span>☀️</span>
-                    <span className="hidden sm:inline">{isAr ? 'وضع فاتح' : 'Light'}</span>
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-[11px]">
-                    <span>🌙</span>
-                    <span className="hidden sm:inline">{isAr ? 'وضع داكن' : 'Dark'}</span>
+                )}
+                {selectedBranch && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
+                    {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
                   </span>
                 )}
-              </button>
+              </div>
+            </div>
+          </div>
 
-              {/* Badge paymob */}
-              <span
-                className={`hidden sm:inline-flex items-center px-2 py-1 rounded-full text-[11px] border ${
-                  store.paymob_enabled
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800'
-                    : 'bg-gray-50 text-gray-600 border-gray-200 dark:bg-slate-800 dark:text-gray-300 dark:border-slate-700'
+          <div className="flex items-center gap-3">
+            {/* Language */}
+            <div className="flex items-center text-[11px] border border-gray-200 rounded-full overflow-hidden dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => setLanguage('en')}
+                className={`px-2 py-1 ${
+                  !isAr
+                    ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
+                    : 'text-gray-600 dark:text-gray-300'
                 }`}
               >
-                {store.paymob_enabled
-                  ? (isAr ? 'PayMob متاح' : 'PayMob enabled')
-                  : (isAr ? 'PayMob غير متاح' : 'PayMob disabled')}
-              </span>
-            </div>
-          </header>
-
-          {/* Content */}
-          <div className="px-4 md:px-8 py-6 space-y-4 max-w-5xl mx-auto w-full">
-            {/* بيانات العميل + نوع الطلب + الدفع */}
-            <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                  {isAr ? 'بيانات الطلب' : 'Order details'}
-                </p>
-                {currentStatus && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-600/60 dark:bg-amber-900/20 dark:text-amber-100">
-                    {isAr ? 'الحالة: ' : 'Status: '}
-                    {formatStatusLabel(currentStatus)}
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-gray-600 dark:text-gray-300">
-                    {isAr ? 'الفرع' : 'Branch'}
-                  </label>
-                  <select
-                    value={selectedBranchId || ''}
-                    onChange={(e) => setSelectedBranchId(e.target.value || null)}
-                    className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
-                  >
-                    {!selectedBranchId && <option value="">{isAr ? 'اختر الفرع' : 'Select branch'}</option>}
-                    {branches.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* نوع الطلب */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11px] text-gray-600 dark:text-gray-300">
-                    {isAr ? 'نوع الطلب' : 'Order type'}
-                  </label>
-                  <div className="flex rounded-full border border-gray-200 overflow-hidden dark:border-slate-700">
-                    <button
-                      type="button"
-                      onClick={() => setOrderType('IN_STORE')}
-                      className={`px-3 py-1 ${
-                        orderType === 'IN_STORE'
-                          ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
-                          : 'text-gray-600 dark:text-gray-300'
-                      }`}
-                    >
-                      {isAr ? 'داخل المطعم' : 'In store'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOrderType('DELIVERY')}
-                      className={`px-3 py-1 ${
-                        orderType === 'DELIVERY'
-                          ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
-                          : 'text-gray-600 dark:text-gray-300'
-                      }`}
-                    >
-                      {isAr ? 'دليفري' : 'Delivery'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder={isAr ? 'اسمك (اختياري)' : 'Your name (optional)'}
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
-                />
-                <input
-                  type="text"
-                  placeholder={isAr ? 'رقم الموبايل (اختياري)' : 'Mobile number (optional)'}
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
-                />
-              </div>
-
-              {orderType === 'DELIVERY' && (
-                <textarea
-                  placeholder={isAr ? 'عنوان التوصيل بالتفصيل' : 'Delivery address (details)'}
-                  value={deliveryAddress}
-                  onChange={(e) => setDeliveryAddress(e.target.value)}
-                  rows={2}
-                  className="w-full text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none dark:text-gray-100"
-                />
-              )}
-
-              <textarea
-                placeholder={
+                EN
+              </button>
+              <button
+                type="button"
+                onClick={() => setLanguage('ar')}
+                className={`px-2 py-1 ${
                   isAr
-                    ? 'ملاحظات على الطلب (بدون سكر، زيادة جبنة، ...)'
-                    : 'Notes (no sugar, extra cheese, ...)'
-                }
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                className="w-full text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none dark:text-gray-100"
-              />
+                    ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
+                    : 'text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                AR
+              </button>
+            </div>
 
-              {/* طريقة الدفع */}
-              <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                <span className="text-gray-500 dark:text-gray-400">
-                  {isAr ? 'طريقة الدفع:' : 'Payment method:'}
+            {/* Theme */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="inline-flex items-center justify-center rounded-xl border border-gray-200 p-2 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+            >
+              {theme === 'dark' ? (
+                <span className="flex items-center gap-1 text-[11px]">
+                  <span>☀️</span>
+                  <span className="hidden sm:inline">{isAr ? 'وضع فاتح' : 'Light'}</span>
                 </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[11px]">
+                  <span>🌙</span>
+                  <span className="hidden sm:inline">{isAr ? 'وضع داكن' : 'Dark'}</span>
+                </span>
+              )}
+            </button>
+
+            {/* Badge paymob */}
+            <span
+              className={`hidden sm:inline-flex items-center px-2 py-1 rounded-full text-[11px] border ${
+                store.paymob_enabled
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-800'
+                  : 'bg-gray-50 text-gray-600 border-gray-200 dark:bg-slate-800 dark:text-gray-300 dark:border-slate-700'
+              }`}
+            >
+              {store.paymob_enabled
+                ? (isAr ? 'PayMob متاح' : 'PayMob enabled')
+                : (isAr ? 'PayMob غير متاح' : 'PayMob disabled')}
+            </span>
+          </div>
+        </header>
+
+        {/* Content */}
+        <div className="px-4 md:px-8 py-6 space-y-4 max-w-5xl mx-auto w-full">
+          {/* بيانات العميل + نوع الطلب + الدفع */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+                {isAr ? 'بيانات الطلب' : 'Order details'}
+              </p>
+              {currentStatus && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-600/60 dark:bg-amber-900/20 dark:text-amber-100">
+                  {isAr ? 'الحالة: ' : 'Status: '}
+                  {formatStatusLabel(currentStatus)}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-gray-600 dark:text-gray-300">
+                  {isAr ? 'الفرع' : 'Branch'}
+                </label>
+                <select
+                  value={selectedBranchId || ''}
+                  onChange={(e) => setSelectedBranchId(e.target.value || null)}
+                  className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                >
+                  {!selectedBranchId && <option value="">{isAr ? 'اختر الفرع' : 'Select branch'}</option>}
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* نوع الطلب */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-gray-600 dark:text-gray-300">
+                  {isAr ? 'نوع الطلب' : 'Order type'}
+                </label>
                 <div className="flex rounded-full border border-gray-200 overflow-hidden dark:border-slate-700">
                   <button
                     type="button"
-                    onClick={() => setPaymentMethod('CASH')}
+                    onClick={() => setOrderType('IN_STORE')}
                     className={`px-3 py-1 ${
-                      paymentMethod === 'CASH'
-                        ? 'bg-emerald-600 text-white dark:bg-emerald-500'
+                      orderType === 'IN_STORE'
+                        ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
                         : 'text-gray-600 dark:text-gray-300'
                     }`}
                   >
-                    {isAr ? 'عند الاستلام' : 'Cash'}
+                    {isAr ? 'داخل المطعم' : 'In store'}
                   </button>
-
-                  {/* ✅ PayMob يظهر فقط لو enabled */}
-                  {store.paymob_enabled && (
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod('PAYMOB')}
-                      className={`px-3 py-1 ${
-                        paymentMethod === 'PAYMOB'
-                          ? 'bg-blue-600 text-white dark:bg-blue-500'
-                          : 'text-gray-600 dark:text-gray-300'
-                      }`}
-                    >
-                      PayMob
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setOrderType('DELIVERY')}
+                    className={`px-3 py-1 ${
+                      orderType === 'DELIVERY'
+                        ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
+                        : 'text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    {isAr ? 'دليفري' : 'Delivery'}
+                  </button>
                 </div>
+              </div>
+            </div>
 
-                {!store.paymob_enabled && (
-                  <span className="text-[11px] text-gray-400 dark:text-gray-500">
-                    {isAr ? '* الدفع الإلكتروني غير متاح لهذا الفرع' : '* Online payment is disabled for this store'}
-                  </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input
+                type="text"
+                placeholder={isAr ? 'اسمك (اختياري)' : 'Your name (optional)'}
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+              />
+              <input
+                type="text"
+                placeholder={isAr ? 'رقم الموبايل (اختياري)' : 'Mobile number (optional)'}
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+              />
+            </div>
+
+            {orderType === 'DELIVERY' && (
+              <textarea
+                placeholder={isAr ? 'عنوان التوصيل بالتفصيل' : 'Delivery address (details)'}
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                rows={2}
+                className="w-full text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none dark:text-gray-100"
+              />
+            )}
+
+            <textarea
+              placeholder={
+                isAr
+                  ? 'ملاحظات على الطلب (بدون سكر، زيادة جبنة، ...)'
+                  : 'Notes (no sugar, extra cheese, ...)'
+              }
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              className="w-full text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none dark:text-gray-100"
+            />
+
+            {/* طريقة الدفع */}
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="text-gray-500 dark:text-gray-400">
+                {isAr ? 'طريقة الدفع:' : 'Payment method:'}
+              </span>
+              <div className="flex rounded-full border border-gray-200 overflow-hidden dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('CASH')}
+                  className={`px-3 py-1 ${
+                    paymentMethod === 'CASH'
+                      ? 'bg-emerald-600 text-white dark:bg-emerald-500'
+                      : 'text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  {isAr ? 'عند الاستلام' : 'Cash'}
+                </button>
+
+                {/* ✅ PayMob يظهر فقط لو enabled */}
+                {store.paymob_enabled && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('PAYMOB')}
+                    className={`px-3 py-1 ${
+                      paymentMethod === 'PAYMOB'
+                        ? 'bg-blue-600 text-white dark:bg-blue-500'
+                        : 'text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    PayMob
+                  </button>
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div className="text-[11px] text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl px-3 py-2 flex items-center justify-between gap-2">
+              {!store.paymob_enabled && (
+                <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {isAr ? '* الدفع الإلكتروني غير متاح لهذا الفرع' : '* Online payment is disabled for this store'}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              <div className="lg:col-span-2 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl px-3 py-3 text-[11px] text-gray-600 dark:text-gray-300 space-y-3">
+                <div className="flex items-center justify-between gap-2">
                   <div>
                     <p className="font-semibold text-gray-800 dark:text-gray-100">
-                      {isAr ? 'منيو الطاولة' : 'Table menu'}
+                      {isAr ? 'طاولات الفرع' : 'Branch tables'}
                     </p>
                     <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                      {isAr
-                        ? 'أدخل كود الطاولة لفتح منيو الطاولة مباشرة'
-                        : 'Enter a table code to open the table menu'}
+                      {isAr ? 'اعرض الطاولات واحجزها بالوقت المناسب ثم افتح منيو الطاولة.' : 'View branch tables, reserve a slot, then open the table menu.'}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={tableMenuCode}
-                      onChange={(e) => setTableMenuCode(e.target.value)}
-                      className="w-24 text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-2 py-1 bg-white dark:bg-slate-900"
-                      placeholder={isAr ? 'رقم/كود' : 'Code'}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleOpenTableMenu}
-                      className="px-3 py-1 rounded-xl bg-blue-600 text-white text-[11px] hover:bg-blue-700"
-                    >
-                      {isAr ? 'فتح' : 'Open'}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchTablesAvailability}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-[11px]"
+                  >
+                    <span className="text-sm">🔄</span>
+                    <span>{isAr ? 'تحديث الطاولات' : 'Refresh tables'}</span>
+                  </button>
                 </div>
 
-                <div className="hidden md:flex flex-col justify-center text-[11px] text-gray-500 dark:text-gray-400 bg-blue-50/60 dark:bg-slate-950 border border-blue-100 dark:border-slate-800 rounded-2xl px-3 py-2">
-                  <span className="font-semibold text-gray-800 dark:text-gray-100">
-                    {isAr ? 'روابط المشاركة' : 'Shareable links'}
-                  </span>
-                  <span className="mt-1 truncate">
-                    {`${window.location.origin}/store/${storeId}/menu`}
-                  </span>
-                </div>
-              </div>
-            </section>
-
-            {/* المنتجات الترندي */}
-            {trendingItems.length > 0 && (
-              <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                    {isAr ? 'الأكثر طلبًا في الفرع' : 'Trending in branch'}
-                  </p>
-                  {selectedBranch && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1">
                     <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                      {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+                      {isAr ? 'موعد الحجز' : 'Reservation time'}
                     </span>
+                    <input
+                      type="datetime-local"
+                      value={tableFilters.datetime}
+                      onChange={(e) => handleTableFilterChange('datetime', e.target.value)}
+                      className="text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-900"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                      {isAr ? 'عدد الأفراد' : 'Party size'}
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={tableFilters.partySize}
+                      onChange={(e) => handleTableFilterChange('partySize', Number(e.target.value) || 1)}
+                      className="text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-900"
+                    />
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                      {isAr ? 'المدة (دقائق)' : 'Duration (mins)'}
+                    </span>
+                    <input
+                      type="number"
+                      min={15}
+                      value={tableFilters.duration}
+                      onChange={(e) => handleTableFilterChange('duration', Number(e.target.value) || 60)}
+                      className="text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-900"
+                    />
+                  </label>
+                </div>
+
+                <div className="space-y-2">
+                  {tablesLoading ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{isAr ? 'جاري تحميل الطاولات...' : 'Loading tables...'}</p>
+                  ) : tables.length === 0 ? (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{isAr ? 'لا توجد طاولات لهذا الفرع.' : 'No tables for this branch.'}</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {tables.map((table) => {
+                        const available = table.available_at_time ?? table.is_available;
+                        return (
+                          <div
+                            key={table.id}
+                            className="rounded-2xl border border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 flex flex-col gap-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                  {isAr ? `طاولة ${table.number}` : `Table ${table.number}`}
+                                </p>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  {isAr ? `السعة: ${table.capacity} أفراد` : `Capacity: ${table.capacity} guests`}
+                                </p>
+                                {table.branch_name && (
+                                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                    {isAr ? `فرع: ${table.branch_name}` : `Branch: ${table.branch_name}`}
+                                  </p>
+                                )}
+                              </div>
+                              <span
+                                className={`text-[11px] px-2 py-1 rounded-full border ${available ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-100 dark:border-emerald-800' : 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/30 dark:text-red-200 dark:border-red-800'}`}
+                              >
+                                {available ? (isAr ? 'متاحة' : 'Available') : (isAr ? 'غير متاحة' : 'Unavailable')}
+                              </span>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTableMenu(table.id)}
+                                className="flex-1 px-3 py-2 rounded-xl text-[12px] font-semibold bg-blue-600 text-white hover:bg-blue-700"
+                              >
+                                {isAr ? 'فتح منيو الطاولة' : 'Open table menu'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!available || reservingTableId === table.id}
+                                onClick={() => handleReserveTable(table.id)}
+                                className="px-3 py-2 rounded-xl text-[12px] font-semibold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:border-emerald-800 dark:text-emerald-100 dark:hover:bg-emerald-900/30"
+                              >
+                                {reservingTableId === table.id
+                                  ? (isAr ? 'جارٍ الحجز...' : 'Reserving...')
+                                  : available
+                                    ? (isAr ? 'حجز' : 'Reserve')
+                                    : (isAr ? 'غير متاح' : 'Unavailable')}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {trendingItems.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleAddToCart(item)}
-                      className="text-right bg-blue-50/50 dark:bg-slate-950 hover:bg-blue-100 dark:hover:bg-slate-800 border border-blue-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-500 rounded-2xl p-3 flex flex-col justify-between min-h-[100px]"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-                          {item.name}
-                        </p>
-                        {item.category_name && (
-                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                            {item.category_name}
-                          </p>
-                        )}
-                      </div>
-                      <div className="mt-3 text-sm font-bold text-blue-700 dark:text-blue-300">
-                        {numberFormatter.format(Number(item.unit_price || 0))} {isAr ? 'ج.م' : 'EGP'}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* البحث + الفلاتر */}
-            <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <input
-                  type="text"
-                  placeholder={isAr ? 'ابحث عن مشروب أو طبق...' : 'Search for a drink or dish...'}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="flex-1 text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
-                />
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col justify-center text-[11px] text-gray-500 dark:text-gray-400 bg-blue-50/60 dark:bg-slate-950 border border-blue-100 dark:border-slate-800 rounded-2xl px-3 py-3 space-y-2">
+                <span className="font-semibold text-gray-800 dark:text-gray-100">
+                  {isAr ? 'روابط المشاركة' : 'Shareable links'}
+                </span>
+                <span className="truncate text-gray-700 dark:text-gray-200">
+                  {`${window.location.origin}/store/${storeId}/menu`}
+                </span>
                 <button
                   type="button"
-                  onClick={() => setSelectedCategory('ALL')}
-                  className={`px-3 py-1.5 rounded-full text-[11px] border ${
-                    selectedCategory === 'ALL'
-                      ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
-                      : 'bg-white text-gray-700 border-gray-200 dark:bg-slate-950 dark:text-gray-100 dark:border-slate-700'
-                  }`}
+                  onClick={() =>
+                    navigator.clipboard.writeText(`${window.location.origin}/store/${storeId}/menu`).then(
+                      () => notifySuccess(isAr ? 'تم نسخ الرابط' : 'Link copied'),
+                      () => notifyError(isAr ? 'تعذر نسخ الرابط' : 'Could not copy link')
+                    )
+                  }
+                  className="self-start px-3 py-1.5 rounded-lg bg-white border border-blue-100 text-blue-700 text-[11px] hover:bg-blue-100 dark:bg-slate-900 dark:border-slate-700 dark:text-blue-200"
                 >
-                  {isAr ? 'كل الأصناف' : 'All items'}
+                  {isAr ? 'نسخ الرابط' : 'Copy link'}
                 </button>
+              </div>
+            </div>
+          </section>
 
-                {categories.map((cat) => (
+          {/* المنتجات الترندي */}
+          {trendingItems.length > 0 && (
+            <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+                  {isAr ? 'الأكثر طلبًا في الفرع' : 'Trending in branch'}
+                </p>
+                {selectedBranch && (
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {trendingItems.map((item) => (
                   <button
-                    key={cat}
+                    key={item.id}
                     type="button"
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1.5 rounded-full text-[11px] border ${
-                      selectedCategory === cat
-                        ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
-                        : 'bg-white text-gray-700 border-gray-200 dark:bg-slate-950 dark:text-gray-100 dark:border-slate-700'
-                    }`}
+                    onClick={() => handleAddToCart(item)}
+                    className="text-right bg-blue-50/50 dark:bg-slate-950 hover:bg-blue-100 dark:hover:bg-slate-800 border border-blue-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-500 rounded-2xl p-3 flex flex-col justify-between min-h-[100px]"
                   >
-                    {cat}
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                        {item.name}
+                      </p>
+                      {item.category_name && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                          {item.category_name}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-3 text-sm font-bold text-blue-700 dark:text-blue-300">
+                      {numberFormatter.format(Number(item.unit_price || 0))} {isAr ? 'ج.م' : 'EGP'}
+                    </div>
                   </button>
                 ))}
               </div>
             </section>
+          )}
 
-            {/* قائمة الأصناف */}
-            <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
-              {filteredItems.length === 0 ? (
-                <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
-                  {isAr ? 'لا توجد أصناف مطابقة حاليًا.' : 'No matching items at the moment.'}
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {filteredItems.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleAddToCart(item)}
-                      className="text-right bg-gray-50 dark:bg-slate-950 hover:bg-blue-50 dark:hover:bg-slate-800 border border-gray-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-500 rounded-2xl p-3 flex flex-col justify-between min-h-[100px]"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-                          {item.name}
+          {/* البحث + الفلاتر */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                type="text"
+                placeholder={isAr ? 'ابحث عن مشروب أو طبق...' : 'Search for a drink or dish...'}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1 text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('ALL')}
+                className={`px-3 py-1.5 rounded-full text-[11px] border ${
+                  selectedCategory === 'ALL'
+                    ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                    : 'bg-white text-gray-700 border-gray-200 dark:bg-slate-950 dark:text-gray-100 dark:border-slate-700'
+                }`}
+              >
+                {isAr ? 'كل الأصناف' : 'All items'}
+              </button>
+
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] border ${
+                    selectedCategory === cat
+                      ? 'bg-blue-600 text-white border-blue-600 dark:bg-blue-500 dark:border-blue-500'
+                      : 'bg-white text-gray-700 border-gray-200 dark:bg-slate-950 dark:text-gray-100 dark:border-slate-700'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* قائمة الأصناف */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
+            {filteredItems.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
+                {isAr ? 'لا توجد أصناف مطابقة حاليًا.' : 'No matching items at the moment.'}
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {filteredItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleAddToCart(item)}
+                    className="text-right bg-gray-50 dark:bg-slate-950 hover:bg-blue-50 dark:hover:bg-slate-800 border border-gray-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-500 rounded-2xl p-3 flex flex-col justify-between min-h-[100px]"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                        {item.name}
+                      </p>
+                      {item.category_name && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                          {item.category_name}
                         </p>
-                        {item.category_name && (
-                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                            {item.category_name}
-                          </p>
-                        )}
-                      </div>
-                      <div className="mt-3 text-sm font-bold text-blue-700 dark:text-blue-300">
-                        {numberFormatter.format(Number(item.unit_price || 0))} {isAr ? 'ج.م' : 'EGP'}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {/* رسالة نجاح بعد الطلب */}
-            {successOrder && (
-              <section className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-100 rounded-2xl p-4 text-sm space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold">
-                    {isAr ? 'تم استلام طلبك بنجاح 🎉' : 'Your order has been received 🎉'}
-                  </p>
-                  {currentStatus && (
-                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/70 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-100">
-                      {formatStatusLabel(currentStatus)}
-                    </span>
-                  )}
-                </div>
-                <p>{isAr ? 'رقم الطلب' : 'Order number'}: #{successOrder.id}</p>
-                {selectedBranch && (
-                  <p className="text-[11px] text-emerald-700/80 dark:text-emerald-100/80">
-                    {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
-                  </p>
-                )}
-                <p>
-                  {isAr ? 'الإجمالي: ' : 'Total: '}
-                  {numberFormatter.format(Number(successOrder.total || 0))} {isAr ? 'ج.م' : 'EGP'}
-                </p>
-                <p className="text-xs mt-2 text-emerald-700/80 dark:text-emerald-100/80">
-                  {isAr
-                    ? 'نقوم بتحديث الحالة تلقائيًا، وسنرسل لك تنبيهًا صوتيًا عند جاهزية الطلب.'
-                    : 'Status updates arrive automatically with voice alerts when ready.'}
-                </p>
-              </section>
+                      )}
+                    </div>
+                    <div className="mt-3 text-sm font-bold text-blue-700 dark:text-blue-300">
+                      {numberFormatter.format(Number(item.unit_price || 0))} {isAr ? 'ج.م' : 'EGP'}
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
-          </div>
-          
-          {/* سلة الطلب أسفل الشاشة */}
-          <div className="fixed bottom-0 left-0 right-0 z-30">
-            <div className="max-w-5xl mx-auto px-4 pb-3">
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-gray-100 dark:border-slate-800 p-3">
-                {cart.length === 0 ? (
-                  <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center">
-                    {isAr ? 'أضف منتجات إلى السلة لبدء الطلب.' : 'Add items to the cart to start your order.'}
-                  </p>
-                ) : (
-                  <>
-                    <div className="max-h-36 overflow-y-auto mb-2 border border-gray-100 dark:border-slate-800 rounded-2xl">
-                      <table className="w-full text-[11px]">
-                        <tbody>
-                          {cart.map((row) => (
-                            <tr
-                              key={row.itemId}
-                              className="border-b border-gray-50 dark:border-slate-800 last:border-0"
-                            >
-                              <td className="py-2 px-2 text-right">
-                                <div className="font-semibold text-gray-800 dark:text-gray-100">
-                                  {row.name}
-                                </div>
-                                <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                                  {numberFormatter.format(row.unitPrice)} {isAr ? 'ج.م' : 'EGP'}
-                                </div>
-                              </td>
+          </section>
 
-                              <td className="py-2 px-2">
-                                <div className="flex items-center justify-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleChangeQuantity(row.itemId, -1)}
-                                    className="w-6 h-6 rounded-full border border-gray-300 dark:border-slate-700 flex items-center justify-center text-[12px] hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-700 dark:text-gray-100"
-                                  >
-                                    -
-                                  </button>
-                                  <span className="w-6 text-center text-[12px] font-semibold text-gray-800 dark:text-gray-100">
-                                    {row.quantity}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleChangeQuantity(row.itemId, 1)}
-                                    className="w-6 h-6 rounded-full border border-blue-500 flex items-center justify-center text-[12px] text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-800"
-                                  >
-                                    +
-                                  </button>
-                                </div>
-                              </td>
-
-                              <td className="py-2 px-2 text-left text-gray-800 dark:text-gray-100 whitespace-nowrap">
-                                {numberFormatter.format(row.subtotal)} {isAr ? 'ج.م' : 'EGP'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="flex items-center justify-between mb-2 text-sm">
-                      <span className="text-gray-600 dark:text-gray-300">
-                        {isAr ? `${cart.length} صنف في السلة` : `${cart.length} items in cart`}
-                      </span>
-                      <span className="font-bold text-gray-900 dark:text-gray-50">
-                        {isAr ? 'المجموع: ' : 'Total: '}
-                        {numberFormatter.format(total)} {isAr ? 'ج.م' : 'EGP'}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={submitting || cart.length === 0}
-                      onClick={handleSubmitOrder}
-                      className="w-full py-2.5 rounded-2xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {submitting
-                        ? (isAr ? 'جاري إرسال الطلب...' : 'Sending order...')
-                        : (isAr ? 'تأكيد الطلب' : 'Confirm order')}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleClearCart}
-                      disabled={submitting || cart.length === 0}
-                      className="w-full mt-1 py-2 rounded-2xl text-[12px] font-medium border border-red-100 dark:border-red-800 text-red-500 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40"
-                    >
-                      {isAr ? 'إفراغ السلة' : 'Clear cart'}
-                    </button>
-                  </>
+          {/* رسالة نجاح بعد الطلب */}
+          {successOrder && (
+            <section className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-100 rounded-2xl p-4 text-sm space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold">
+                  {isAr ? 'تم استلام طلبك بنجاح 🎉' : 'Your order has been received 🎉'}
+                </p>
+                {currentStatus && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/70 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-100">
+                    {formatStatusLabel(currentStatus)}
+                  </span>
                 )}
               </div>
+              <p>{isAr ? 'رقم الطلب' : 'Order number'}: #{successOrder.id}</p>
+              {selectedBranch && (
+                <p className="text-[11px] text-emerald-700/80 dark:text-emerald-100/80">
+                  {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+                </p>
+              )}
+              <p>
+                {isAr ? 'الإجمالي: ' : 'Total: '}
+                {numberFormatter.format(Number(successOrder.total || 0))} {isAr ? 'ج.م' : 'EGP'}
+              </p>
+              <p className="text-xs mt-2 text-emerald-700/80 dark:text-emerald-100/80">
+                {isAr
+                  ? 'نقوم بتحديث الحالة تلقائيًا، وسنرسل لك تنبيهًا صوتيًا عند جاهزية الطلب.'
+                  : 'Status updates arrive automatically with voice alerts when ready.'}
+              </p>
+            </section>
+          )}
+        </div>
+
+        {/* سلة الطلب أسفل الشاشة */}
+        <div className="fixed bottom-0 left-0 right-0 z-30">
+          <div className="max-w-5xl mx-auto px-4 pb-3">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-gray-100 dark:border-slate-800 p-3">
+              {cart.length === 0 ? (
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center">
+                  {isAr ? 'أضف منتجات إلى السلة لبدء الطلب.' : 'Add items to the cart to start your order.'}
+                </p>
+              ) : (
+                <>
+                  <div className="max-h-36 overflow-y-auto mb-2 border border-gray-100 dark:border-slate-800 rounded-2xl">
+                    <table className="w-full text-[11px]">
+                      <tbody>
+                        {cart.map((row) => (
+                          <tr
+                            key={row.itemId}
+                            className="border-b border-gray-50 dark:border-slate-800 last:border-0"
+                          >
+                            <td className="py-2 px-2 text-right">
+                              <div className="font-semibold text-gray-800 dark:text-gray-100">
+                                {row.name}
+                              </div>
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                {numberFormatter.format(row.unitPrice)} {isAr ? 'ج.م' : 'EGP'}
+                              </div>
+                            </td>
+
+                            <td className="py-2 px-2">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleChangeQuantity(row.itemId, -1)}
+                                  className="w-6 h-6 rounded-full border border-gray-300 dark:border-slate-700 flex items-center justify-center text-[12px] hover:bg-gray-50 dark:hover:bg-slate-800 text-gray-700 dark:text-gray-100"
+                                >
+                                  -
+                                </button>
+                                <span className="w-6 text-center text-[12px] font-semibold text-gray-800 dark:text-gray-100">
+                                  {row.quantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleChangeQuantity(row.itemId, 1)}
+                                  className="w-6 h-6 rounded-full border border-blue-500 flex items-center justify-center text-[12px] text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-800"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </td>
+
+                            <td className="py-2 px-2 text-left text-gray-800 dark:text-gray-100 whitespace-nowrap">
+                              {numberFormatter.format(row.subtotal)} {isAr ? 'ج.م' : 'EGP'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex items-center justify-between mb-2 text-sm">
+                    <span className="text-gray-600 dark:text-gray-300">
+                      {isAr ? `${cart.length} صنف في السلة` : `${cart.length} items in cart`}
+                    </span>
+                    <span className="font-bold text-gray-900 dark:text-gray-50">
+                      {isAr ? 'المجموع: ' : 'Total: '}
+                      {numberFormatter.format(total)} {isAr ? 'ج.م' : 'EGP'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={submitting || cart.length === 0}
+                    onClick={handleSubmitOrder}
+                    className="w-full py-2.5 rounded-2xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {submitting
+                      ? (isAr ? 'جاري إرسال الطلب...' : 'Sending order...')
+                      : (isAr ? 'تأكيد الطلب' : 'Confirm order')}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleClearCart}
+                    disabled={submitting || cart.length === 0}
+                    className="w-full mt-1 py-2 rounded-2xl text-[12px] font-medium border border-red-100 dark:border-red-800 text-red-500 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40"
+                  >
+                    {isAr ? 'إفراغ السلة' : 'Clear cart'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }

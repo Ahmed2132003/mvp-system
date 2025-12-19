@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifyError, notifySuccess } from '../lib/notifications';
@@ -139,11 +139,28 @@ export default function Dashboard() {
   // رقم فورمات
   const numberFormatter = new Intl.NumberFormat(isAr ? 'ar-EG' : 'en-EG');
 
+  const playNotificationSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.2);
+    } catch (error) {
+      console.warn('Audio unavailable', error);
+    }
+  }, []);
+
   // تطبيق الثيم على <html> + حفظه
   useEffect(() => {
     localStorage.setItem('theme', theme);
     if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
+      document.documentElement.classList.add('dark');      
     } else {
       document.documentElement.classList.remove('dark');
     }
@@ -306,7 +323,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchMe(); // ✅ جديد
+    fetchMe();
   }, []);
 
   useEffect(() => {
@@ -322,6 +339,22 @@ export default function Dashboard() {
     fetchRecentOrders();
   }, [selectedStoreId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* eslint-disable react-hooks/exhaustive-deps */
+  useEffect(() => {
+    if (!selectedStoreId) return undefined;
+
+    const interval = setInterval(() => {
+      fetchSummary();
+      fetchRecentOrders();
+      fetchTodayOrders();
+      const msg = isAr ? 'تم تحديث الداشبورد تلقائيًا.' : 'Dashboard data refreshed automatically.';
+      notifySuccess(msg);
+      playNotificationSound();
+    }, 45000);
+
+    return () => clearInterval(interval);
+  }, [selectedStoreId, isAr, playNotificationSound]); // intentionally omitting fetch* to keep stable interval
+  
   const sales = summary?.sales || {};
   const salesOverTime = summary?.sales_over_time || [];
   const lowStock = summary?.low_stock || [];
