@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
-import { notifyError } from '../lib/notifications';
+import { notifyError, notifySuccess } from '../lib/notifications';
 import { useStore } from '../hooks/useStore';
+
 // =====================
 // Sidebar Navigation
 // =====================
@@ -27,36 +28,42 @@ function SidebarNav({ lang }) {
       >
         {isAr ? 'شاشة الكاشير (POS)' : 'Cashier Screen (POS)'}
       </Link>
+
       <Link
         to="/inventory"
         className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
       >
         {isAr ? 'إدارة المخزون' : 'Inventory Management'}
       </Link>
+
       <Link
         to="/attendance"
         className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
       >
         {isAr ? 'الحضور والانصراف' : 'Attendance'}
       </Link>
+
       <Link
         to="/reservations"
         className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
       >
         {isAr ? 'الحجوزات' : 'Reservations'}
       </Link>
+
       <Link
         to="/reports"
         className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
       >
         {isAr ? 'التقارير' : 'Reports'}
       </Link>
+
       <Link
         to="/settings"
         className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
       >
         {isAr ? 'الإعدادات' : 'Settings'}
       </Link>
+
       {/* ✅ Employees */}
       <Link
         to="/employees"
@@ -72,13 +79,13 @@ function SidebarNav({ lang }) {
       >
         {isAr ? 'الحسابات' : 'Accounting'}
       </Link>
+
       <Link
         to="/kds"
         className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
       >
         {isAr ? 'المطبخ والبار' : 'KDS'}
       </Link>
-
 
       <Link
         to="/users/create"
@@ -104,9 +111,13 @@ export default function Dashboard() {
   const [me, setMe] = useState(null); // ✅ جديد: بيانات المستخدم الحالي
   const [summary, setSummary] = useState(null);
   const [recentOrders, setRecentOrders] = useState([]);
+  const [todayOrders, setTodayOrders] = useState([]);
+  const [todayOrdersOpen, setTodayOrdersOpen] = useState(false);
+  const [todayOrdersLoading, setTodayOrdersLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [statusUpdating, setStatusUpdating] = useState(null);
 
   const {
     stores,
@@ -117,13 +128,10 @@ export default function Dashboard() {
     selectedStore,
     selectStore,
   } = useStore();
+
   // theme & language
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem('theme') || 'light'
-  );
-  const [lang, setLang] = useState(
-    () => localStorage.getItem('lang') || 'en' // EN default
-  );
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+  const [lang, setLang] = useState(() => localStorage.getItem('lang') || 'en'); // EN default
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const isAr = lang === 'ar';
@@ -166,7 +174,7 @@ export default function Dashboard() {
     try {
       setLoading(true);
       const res = await api.get('/reports/summary/');
-      setSummary(res.data);      
+      setSummary(res.data);
       setError(null);
     } catch (err) {
       console.error('Error loading dashboard summary:', err);
@@ -190,10 +198,7 @@ export default function Dashboard() {
         },
       });
 
-      const results = Array.isArray(res.data)
-        ? res.data
-        : res.data.results || [];
-
+      const results = Array.isArray(res.data) ? res.data : res.data.results || [];
       setRecentOrders(results);
     } catch (err) {
       console.error('Error loading recent orders:', err);
@@ -206,10 +211,104 @@ export default function Dashboard() {
     }
   };
 
+  const getTodayRange = () => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+
+    return {
+      from: start.toISOString(),
+      to: end.toISOString(),
+    };
+  };
+
+  const fetchTodayOrders = async () => {
+    try {
+      setTodayOrdersLoading(true);
+      const { from, to } = getTodayRange();
+
+      const res = await api.get('/orders/', {
+        params: {
+          date_from: from,
+          date_to: to,
+          ordering: '-created_at',
+          page_size: 100,
+        },
+      });
+
+      const results = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setTodayOrders(results);
+    } catch (err) {
+      console.error('Error loading today orders:', err);
+      const msg = isAr
+        ? 'حدث خطأ أثناء تحميل طلبات اليوم'
+        : 'An error occurred while loading today’s orders';
+      notifyError(msg);
+    } finally {
+      setTodayOrdersLoading(false);
+    }
+  };
+
+  const handleOrderStatusChange = async (order, nextStatus) => {
+    if (!order?.id || !nextStatus) return;
+
+    const updatingKey = `${order.id}-${nextStatus}`;
+    setStatusUpdating(updatingKey);
+
+    try {
+      await api.patch(
+        `/orders/${order.id}/`,
+        { status: nextStatus },
+        {
+          params: {
+            store_id: selectedStoreId,
+          },
+        }
+      );
+
+      setTodayOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id
+            ? {
+                ...o,
+                status: nextStatus === 'PAID' && o.status === 'READY' ? o.status : nextStatus,
+                is_paid: nextStatus === 'PAID' ? true : o.is_paid,
+              }
+            : o
+        )
+      );
+
+      setRecentOrders((prev) =>
+        prev.map((o) => (o.id === order.id ? { ...o, status: nextStatus } : o))
+      );
+
+      const successMsg = isAr
+        ? nextStatus === 'PAID'
+          ? `تم تسجيل الطلب #${order.id} كمدفوع.`
+          : `تم إلغاء الطلب #${order.id}.`
+        : nextStatus === 'PAID'
+          ? `Order #${order.id} marked as paid.`
+          : `Order #${order.id} cancelled.`;
+
+      notifySuccess(successMsg);
+    } catch (err) {
+      console.error('Error updating order status:', err);
+      const msg = isAr
+        ? 'تعذر تحديث حالة الطلب، حاول مرة أخرى.'
+        : 'Could not update the order status, please try again.';
+      notifyError(msg);
+    } finally {
+      setStatusUpdating(null);
+    }
+  };
+
   useEffect(() => {
     fetchMe(); // ✅ جديد
   }, []);
-  
+
   useEffect(() => {
     if (!selectedStoreId) {
       setSummary(null);
@@ -232,9 +331,7 @@ export default function Dashboard() {
     {
       id: 1,
       label: isAr ? 'مبيعات اليوم' : 'Today’s Sales',
-      value: `${sales.daily ? numberFormatter.format(sales.daily) : 0} ${
-        isAr ? 'ج.م' : 'EGP'
-      }`,
+      value: `${sales.daily ? numberFormatter.format(sales.daily) : 0} ${isAr ? 'ج.م' : 'EGP'}`,
     },
     {
       id: 2,
@@ -244,9 +341,7 @@ export default function Dashboard() {
     {
       id: 3,
       label: isAr ? 'متوسط قيمة الطلب (اليوم)' : 'Avg Ticket (Today)',
-      value: `${sales.avg_ticket ? Math.round(sales.avg_ticket) : 0} ${
-        isAr ? 'ج.م' : 'EGP'
-      }`,
+      value: `${sales.avg_ticket ? Math.round(sales.avg_ticket) : 0} ${isAr ? 'ج.م' : 'EGP'}`,
     },
     {
       id: 4,
@@ -256,9 +351,7 @@ export default function Dashboard() {
   ];
 
   const maxSalesValue =
-    salesOverTime.length > 0
-      ? Math.max(...salesOverTime.map((r) => r.value || 0))
-      : 0;
+    salesOverTime.length > 0 ? Math.max(...salesOverTime.map((r) => r.value || 0)) : 0;
 
   // ==================
   // Handlers
@@ -277,9 +370,7 @@ export default function Dashboard() {
         {/* Sidebar - Desktop */}
         <aside className="hidden md:flex w-64 flex-col bg-white border-l border-gray-200 shadow-sm dark:bg-slate-900 dark:border-slate-800">
           <div className="px-6 py-5 border-b dark:border-slate-800">
-            <h1 className="text-xl font-bold text-primary dark:text-blue-300">
-              MVP POS
-            </h1>
+            <h1 className="text-xl font-bold text-primary dark:text-blue-300">MVP POS</h1>
             <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
               {isAr ? 'لوحة تحكم الكافيه / المطعم' : 'Restaurant / Café Dashboard'}
             </p>
@@ -298,17 +389,12 @@ export default function Dashboard() {
         {mobileSidebarOpen && (
           <div className="fixed inset-0 z-40 flex md:hidden" aria-modal="true">
             {/* خلفية */}
-            <div
-              className="fixed inset-0 bg-black/40"
-              onClick={() => setMobileSidebarOpen(false)}
-            />
+            <div className="fixed inset-0 bg-black/40" onClick={() => setMobileSidebarOpen(false)} />
             {/* Panel */}
             <div className="relative ml-auto h-full w-64 bg-white shadow-xl border-l border-gray-200 flex flex-col dark:bg-slate-900 dark:border-slate-800">
               <div className="px-4 py-4 border-b flex items-center justify-between dark:border-slate-800">
                 <div>
-                  <h2 className="text-base font-bold text-primary dark:text-blue-300">
-                    MVP POS
-                  </h2>
+                  <h2 className="text-base font-bold text-primary dark:text-blue-300">MVP POS</h2>
                   <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
                     {isAr ? 'القائمة الرئيسية' : 'Main Menu'}
                   </p>
@@ -318,15 +404,8 @@ export default function Dashboard() {
                   onClick={() => setMobileSidebarOpen(false)}
                   className="inline-flex items-center justify-center rounded-full p-1.5 border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-slate-700 dark:text-gray-300 dark:hover:bg-slate-800"
                 >
-                  <span className="sr-only">
-                    {isAr ? 'إغلاق القائمة' : 'Close menu'}
-                  </span>
-                  <svg
-                    className="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    fill="none"
-                  >
+                  <span className="sr-only">{isAr ? 'إغلاق القائمة' : 'Close menu'}</span>
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" stroke="currentColor" fill="none">
                     <path
                       strokeWidth="2"
                       strokeLinecap="round"
@@ -359,15 +438,8 @@ export default function Dashboard() {
                 className="inline-flex md:hidden items-center justify-center rounded-xl border border-gray-200 p-2 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
                 onClick={() => setMobileSidebarOpen(true)}
               >
-                <span className="sr-only">
-                  {isAr ? 'فتح القائمة' : 'Open menu'}
-                </span>
-                <svg
-                  className="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  fill="none"
-                >
+                <span className="sr-only">{isAr ? 'فتح القائمة' : 'Open menu'}</span>
+                <svg className="h-5 w-5" viewBox="0 0 24 24" stroke="currentColor" fill="none">
                   <path
                     strokeWidth="2"
                     strokeLinecap="round"
@@ -404,12 +476,8 @@ export default function Dashboard() {
               {/* Filters */}
               <select className="hidden sm:block text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100">
                 <option>{isAr ? 'اليوم' : 'Today'}</option>
-                <option disabled>
-                  {isAr ? 'قريبًا: آخر ٧ أيام' : 'Coming soon: Last 7 days'}
-                </option>
-                <option disabled>
-                  {isAr ? 'قريبًا: هذا الشهر' : 'Coming soon: This month'}
-                </option>
+                <option disabled>{isAr ? 'قريبًا: آخر ٧ أيام' : 'Coming soon: Last 7 days'}</option>
+                <option disabled>{isAr ? 'قريبًا: هذا الشهر' : 'Coming soon: This month'}</option>
               </select>
 
               <div className="hidden md:block">
@@ -423,9 +491,7 @@ export default function Dashboard() {
                   onChange={(e) => selectStore(e.target.value)}
                   disabled={storesLoading || !stores.length}
                 >
-                  {storesLoading && (
-                    <option>{isAr ? 'جارِ التحميل...' : 'Loading...'}</option>
-                  )}
+                  {storesLoading && <option>{isAr ? 'جارِ التحميل...' : 'Loading...'}</option>}
                   {!storesLoading && stores.length === 0 && (
                     <option>{isAr ? 'لا توجد فروع متاحة' : 'No branches available'}</option>
                   )}
@@ -436,11 +502,9 @@ export default function Dashboard() {
                       </option>
                     ))}
                 </select>
-                {storesError && (
-                  <p className="text-xs text-red-600 mt-1">{storesError}</p>
-                )}
+                {storesError && <p className="text-xs text-red-600 mt-1">{storesError}</p>}
               </div>
-              
+
               {/* Language switcher */}
               <div className="flex items-center text-[11px] border border-gray-200 rounded-full overflow-hidden dark:border-slate-700">
                 <button
@@ -476,16 +540,12 @@ export default function Dashboard() {
                 {theme === 'dark' ? (
                   <span className="flex items-center gap-1 text-[11px]">
                     <span>☀️</span>
-                    <span className="hidden sm:inline">
-                      {isAr ? 'وضع فاتح' : 'Light'}
-                    </span>
+                    <span className="hidden sm:inline">{isAr ? 'وضع فاتح' : 'Light'}</span>
                   </span>
                 ) : (
                   <span className="flex items-center gap-1 text-[11px]">
                     <span>🌙</span>
-                    <span className="hidden sm:inline">
-                      {isAr ? 'وضع داكن' : 'Dark'}
-                    </span>
+                    <span className="hidden sm:inline">{isAr ? 'وضع داكن' : 'Dark'}</span>
                   </span>
                 )}
               </button>
@@ -512,9 +572,7 @@ export default function Dashboard() {
             {/* Loading / Error */}
             {loading && (
               <div className="w-full bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-2xl dark:bg-yellow-900/30 dark:border-yellow-800 dark:text-yellow-100">
-                {isAr
-                  ? 'جاري تحميل بيانات الداشبورد...'
-                  : 'Loading dashboard data...'}
+                {isAr ? 'جاري تحميل بيانات الداشبورد...' : 'Loading dashboard data...'}
               </div>
             )}
 
@@ -551,9 +609,7 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                        {isAr
-                          ? 'مبيعات اليوم - توزيع زمني'
-                          : 'Today’s Sales - Time distribution'}
+                        {isAr ? 'مبيعات اليوم - توزيع زمني' : 'Today’s Sales - Time distribution'}
                       </h3>
                       <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
                         {isAr
@@ -568,9 +624,7 @@ export default function Dashboard() {
 
                   {salesOverTime.length === 0 ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {isAr
-                        ? 'لا توجد مبيعات مسجلة اليوم حتى الآن.'
-                        : 'No sales recorded yet today.'}
+                      {isAr ? 'لا توجد مبيعات مسجلة اليوم حتى الآن.' : 'No sales recorded yet today.'}
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -591,8 +645,7 @@ export default function Dashboard() {
                               />
                             </div>
                             <span className="w-16 text-[11px] text-gray-500 text-left dark:text-gray-300">
-                              {numberFormatter.format(row.value)}{' '}
-                              {isAr ? 'ج.م' : 'EGP'}
+                              {numberFormatter.format(row.value)} {isAr ? 'ج.م' : 'EGP'}
                             </span>
                           </div>
                         );
@@ -621,9 +674,7 @@ export default function Dashboard() {
 
                   {topItems.length === 0 ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {isAr
-                        ? 'لا توجد بيانات كافية حتى الآن.'
-                        : 'Not enough data yet.'}
+                      {isAr ? 'لا توجد بيانات كافية حتى الآن.' : 'Not enough data yet.'}
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -637,9 +688,7 @@ export default function Dashboard() {
                               {item.name}
                             </p>
                             <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                              {isAr
-                                ? `عدد القطع المباعة: ${item.total_sold}`
-                                : `Units sold: ${item.total_sold}`}
+                              {isAr ? `عدد القطع المباعة: ${item.total_sold}` : `Units sold: ${item.total_sold}`}
                             </p>
                           </div>
                           <div className="text-right">
@@ -666,24 +715,35 @@ export default function Dashboard() {
                         {isAr ? 'آخر الطلبات' : 'Latest orders'}
                       </h3>
                       <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
-                        {isAr
-                          ? 'لمتابعة الحالة الحالية في الـPOS والـQR'
-                          : 'Monitor current status from POS / QR orders.'}
+                        {isAr ? 'لمتابعة الحالة الحالية في الـPOS والـQR' : 'Monitor current status from POS / QR orders.'}
                       </p>
                     </div>
-                    <Link
-                      to="/pos"
-                      className="text-xs px-3 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
-                    >
-                      {isAr ? 'فتح شاشة الكاشير' : 'Open POS screen'}
-                    </Link>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTodayOrdersOpen(true);
+                          fetchTodayOrders();
+                        }}
+                        className="text-xs px-3 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
+                      >
+                        {isAr ? 'كل طلبات اليوم' : 'All today’s orders'}
+                      </button>
+
+                      {/* ✅ FIX: إغلاق الـ Link بشكل صحيح (بدون تغيير أي منطق) */}
+                      <Link
+                        to="/pos"
+                        className="text-xs px-3 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
+                      >
+                        {isAr ? 'فتح شاشة الكاشير' : 'Open POS screen'}
+                      </Link>
+                    </div>
                   </div>
 
                   {ordersLoading ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {isAr
-                        ? 'جاري تحميل آخر الطلبات...'
-                        : 'Loading recent orders...'}
+                      {isAr ? 'جاري تحميل آخر الطلبات...' : 'Loading recent orders...'}
                     </p>
                   ) : recentOrders.length === 0 ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -703,9 +763,7 @@ export default function Dashboard() {
                                 ? 'غير محدد'
                                 : 'Not specified');
 
-                          const createdAt = order.created_at
-                            ? new Date(order.created_at)
-                            : null;
+                          const createdAt = order.created_at ? new Date(order.created_at) : null;
 
                           const timeLabel = createdAt
                             ? createdAt.toLocaleTimeString(isAr ? 'ar-EG' : 'en-EG', {
@@ -730,8 +788,7 @@ export default function Dashboard() {
                               <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
                                 <span>{tableLabel}</span>
                                 <span>
-                                  {order.total}{' '}
-                                  {isAr ? 'ج.م' : 'EGP'}
+                                  {order.total} {isAr ? 'ج.م' : 'EGP'}
                                 </span>
                               </div>
                               <div className="mt-1">
@@ -777,18 +834,13 @@ export default function Dashboard() {
                                     ? 'غير محدد'
                                     : 'Not specified');
 
-                              const createdAt = order.created_at
-                                ? new Date(order.created_at)
-                                : null;
+                              const createdAt = order.created_at ? new Date(order.created_at) : null;
 
                               const timeLabel = createdAt
-                                ? createdAt.toLocaleTimeString(
-                                    isAr ? 'ar-EG' : 'en-EG',
-                                    {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    }
-                                  )
+                                ? createdAt.toLocaleTimeString(isAr ? 'ar-EG' : 'en-EG', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })
                                 : '--';
 
                               return (
@@ -806,8 +858,7 @@ export default function Dashboard() {
                                     {tableLabel}
                                   </td>
                                   <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
-                                    {order.total}{' '}
-                                    {isAr ? 'ج.م' : 'EGP'}
+                                    {order.total} {isAr ? 'ج.م' : 'EGP'}
                                   </td>
                                   <td className="py-2 px-2 whitespace-nowrap">
                                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200">
@@ -832,23 +883,17 @@ export default function Dashboard() {
                         {isAr ? 'أصناف قليلة في المخزون' : 'Low stock items'}
                       </h3>
                       <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
-                        {isAr
-                          ? 'تابع الأصناف الحرجة قبل ما تخلص'
-                          : 'Track critical items before they run out.'}
+                        {isAr ? 'تابع الأصناف الحرجة قبل ما تخلص' : 'Track critical items before they run out.'}
                       </p>
                     </div>
                     <span className="text-[11px] px-2 py-1 rounded-full bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200">
-                      {isAr
-                        ? `${lowStock.length} عناصر حرجة`
-                        : `${lowStock.length} critical items`}
+                      {isAr ? `${lowStock.length} عناصر حرجة` : `${lowStock.length} critical items`}
                     </span>
                   </div>
 
                   {lowStock.length === 0 ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {isAr
-                        ? 'لا توجد أصناف منخفضة المخزون حاليًا.'
-                        : 'No low-stock items at the moment.'}
+                      {isAr ? 'لا توجد أصناف منخفضة المخزون حاليًا.' : 'No low-stock items at the moment.'}
                     </p>
                   ) : (
                     <div className="space-y-2">
@@ -889,6 +934,187 @@ export default function Dashboard() {
           </div>
         </main>
       </div>
+
+      {todayOrdersOpen && (
+        <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/30 px-4 py-6 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-200 dark:border-slate-800 w-full max-w-5xl">
+            <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-gray-100 dark:border-slate-800">
+              <div>
+                <h4 className="text-base font-semibold text-gray-900 dark:text-gray-50">
+                  {isAr ? 'كل طلبات اليوم' : 'All orders for today'}
+                </h4>
+                <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
+                  {isAr
+                    ? 'تحديث الحالة سريعًا بعد تسليم الطلب (Ready ➝ Paid / Cancelled)'
+                    : 'Quickly update status after delivery (Ready ➝ Paid / Cancelled).'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchTodayOrders}
+                  className="text-xs px-3 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
+                >
+                  {todayOrdersLoading
+                    ? isAr
+                      ? 'جارٍ التحديث...'
+                      : 'Refreshing...'
+                    : isAr
+                      ? 'تحديث'
+                      : 'Refresh'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTodayOrdersOpen(false)}
+                  className="text-xs px-3 py-1 rounded-full bg-gray-900 text-white hover:bg-gray-800 dark:bg-slate-700 dark:hover:bg-slate-600"
+                >
+                  {isAr ? 'إغلاق' : 'Close'}
+                </button>
+              </div>
+            </div>
+
+            <div className="px-4 md:px-6 py-4">
+              {todayOrdersLoading ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {isAr ? 'جارٍ تحميل طلبات اليوم...' : 'Loading today’s orders...'}
+                </p>
+              ) : todayOrders.length === 0 ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {isAr ? 'لا توجد طلبات مسجلة اليوم.' : 'No orders placed today.'}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-right">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
+                        <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                          {isAr ? 'الطلب' : 'Order'}
+                        </th>
+                        <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                          {isAr ? 'الوقت' : 'Time'}
+                        </th>
+                        <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                          {isAr ? 'القناة / الطاولة' : 'Channel / Table'}
+                        </th>
+                        <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                          {isAr ? 'الإجمالي' : 'Total'}
+                        </th>
+                        <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                          {isAr ? 'الحالة' : 'Status'}
+                        </th>
+                        <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                          {isAr ? 'إجراءات' : 'Actions'}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {todayOrders.map((order) => {
+                        const tableLabel =
+                          order.table_name ||
+                          order.table?.name ||
+                          (order.table?.number
+                            ? `${isAr ? 'طاولة' : 'Table'} ${order.table.number}`
+                            : isAr
+                              ? 'غير محدد'
+                              : 'Not specified');
+
+                        const createdAt = order.created_at ? new Date(order.created_at) : null;
+
+                        const timeLabel = createdAt
+                          ? createdAt.toLocaleTimeString(isAr ? 'ar-EG' : 'en-EG', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '--';
+
+                        const canComplete = order.status === 'READY';
+                        const paidBadge = order.is_paid || order.status === 'PAID';
+
+                        return (
+                          <tr
+                            key={order.id}
+                            className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70"
+                          >
+                            <td className="py-2 px-2 whitespace-nowrap font-semibold text-gray-800 dark:text-gray-100">
+                              #{order.id}
+                            </td>
+                            <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                              {timeLabel}
+                            </td>
+                            <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
+                              {tableLabel}
+                            </td>
+                            <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
+                              {order.total} {isAr ? 'ج.م' : 'EGP'}
+                            </td>
+                            <td className="py-2 px-2 whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] ${
+                                  order.status === 'READY'
+                                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'
+                                    : order.status === 'PAID'
+                                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
+                                      : order.status === 'CANCELLED'
+                                        ? 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200'
+                                        : 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200'
+                                }`}
+                              >
+                                {order.status}
+                              </span>
+                            </td>
+                            <td className="py-2 px-2 whitespace-nowrap">
+                              {canComplete ? (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={statusUpdating === `${order.id}-PAID`}
+                                    onClick={() => handleOrderStatusChange(order, 'PAID')}
+                                    className="text-[11px] px-2 py-1 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                                  >
+                                    {statusUpdating === `${order.id}-PAID`
+                                      ? isAr
+                                        ? 'جاري الحفظ...'
+                                        : 'Saving...'
+                                      : isAr
+                                        ? 'تأكيد الدفع'
+                                        : 'Mark paid'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={statusUpdating === `${order.id}-CANCELLED`}
+                                    onClick={() => handleOrderStatusChange(order, 'CANCELLED')}
+                                    className="text-[11px] px-2 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800 disabled:opacity-60"
+                                  >
+                                    {statusUpdating === `${order.id}-CANCELLED`
+                                      ? isAr
+                                        ? 'جاري الحفظ...'
+                                        : 'Saving...'
+                                      : isAr
+                                        ? 'إلغاء'
+                                        : 'Cancel'}
+                                  </button>
+                                </div>
+                              ) : paidBadge ? (
+                                <span className="text-[11px] text-emerald-700 dark:text-emerald-300">
+                                  {isAr ? 'مدفوع' : 'Paid'}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  {isAr ? 'لا توجد إجراءات' : 'No actions'}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

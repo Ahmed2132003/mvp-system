@@ -6,6 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import ValidationError
 
 from django.db import transaction
+from django.db.utils import OperationalError, ProgrammingError
 from django.db.models import Q
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -15,6 +16,7 @@ from django.utils import timezone
 
 from .models import Table, Order, Reservation, OrderItem
 from .serializers import TableSerializer, OrderSerializer, ReservationSerializer
+from .filters import OrderFilter
 from core.permissions import IsEmployeeOfStore, IsManager
 from inventory.models import Item
 from core.models import Store
@@ -80,11 +82,12 @@ class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
     permission_classes = [IsEmployeeOfStore]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = OrderFilter
     filterset_fields = ["status", "table", "branch", "created_at"]
     search_fields = ["table__number", "customer_name"]
     ordering_fields = ["created_at", "total", "status"]
     ordering = ["-created_at"]
-
+    
     def get_queryset(self):
         store = get_store_from_request(self.request)
         if not store:
@@ -130,6 +133,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 # ReservationViewSet
 # =======================
 class ReservationViewSet(viewsets.ModelViewSet):
+    
     serializer_class = ReservationSerializer
     permission_classes = [IsEmployeeOfStore]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
