@@ -1,3 +1,7 @@
+from datetime import timedelta
+
+from typing import Optional
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -20,14 +24,16 @@ from .filters import OrderFilter
 from core.permissions import IsEmployeeOfStore, IsManager
 from inventory.models import Item
 from core.models import Store
+from branches.models import Branch
 
 # ✅ NEW: store switcher context
 from core.utils.store_context import get_store_from_request, get_branch_from_request
+from django.db.models import Sum
 
 # =======================
 # Helpers
 # =======================
-def ensure_aware(dt):
+def ensure_aware(dt):    
     if not dt:
         return dt
     if timezone.is_naive(dt):
@@ -35,9 +41,80 @@ def ensure_aware(dt):
     return dt
 
 
+def paymob_is_enabled(store: Store) -> bool:
+    """Helper to check PayMob toggle safely."""
+    return bool((store.paymob_keys or {}).get("enabled", False))
+
+
+def select_branch_for_store(store: Store, branch_id: Optional[int] = None):
+    """Return an active branch for the store, giving priority to the requested id."""
+    branches = store.branches.filter(is_active=True)
+    branch_pk = None
+    if branch_id is not None:
+        try:
+            branch_pk = int(branch_id)
+        except (TypeError, ValueError):
+            branch_pk = None
+
+    if branch_pk:
+        try:
+            return branches.get(pk=branch_pk)
+        except Branch.DoesNotExist:
+            pass
+    return branches.first()
+
+
+def trending_items_for_store(
+    store: Store, branch: Optional[Branch] = None, limit: int = 6
+):
+    """Return lightweight list of top-selling items for a store/branch in recent days."""
+    recent_from = timezone.now() - timedelta(days=14)
+    qs = OrderItem.objects.filter(
+        order__store=store,
+        order__created_at__gte=recent_from,
+    ).exclude(order__status="CANCELLED")
+
+    if branch:
+        qs = qs.filter(order__branch=branch)
+
+    trending_qs = (
+        qs.values("item_id")
+        .annotate(total_qty=Sum("quantity"))
+        .order_by("-total_qty")[:limit]
+    )
+
+    ids_in_order = [row["item_id"] for row in trending_qs if row["item_id"]]
+    items_lookup = {
+        item.id: item
+        for item in Item.objects.filter(store=store, id__in=ids_in_order).select_related(
+            "category"
+        )
+    }
+
+    result = []
+    for row in trending_qs:
+        item = items_lookup.get(row["item_id"])
+        if not item:
+            continue
+        result.append(
+            {
+                "id": item.id,
+                "name": item.name,
+                "unit_price": float(item.unit_price),
+                "category_id": item.category_id,
+                "category_name": item.category.name if item.category else None,
+                "barcode": item.barcode,
+                "total_qty": row["total_qty"],
+            }
+        )
+
+    return result
+
+
 # =======================
 # TableViewSet (لوحة الإدارة)
 # =======================
+
 class TableViewSet(viewsets.ModelViewSet):
     serializer_class = TableSerializer
     filter_backends = [SearchFilter, OrderingFilter]
@@ -228,12 +305,14 @@ class PublicTableMenuView(APIView):
             is_active=True,
         )
         store = table.store
+        branch_id = request.query_params.get("branch_id")
+        branch = select_branch_for_store(store, branch_id)
 
         items_qs = Item.objects.filter(
             store=store,
             is_active=True,
         ).select_related("category")
-
+        
         items_data = []
         for item in items_qs:
             items_data.append(
@@ -252,6 +331,8 @@ class PublicTableMenuView(APIView):
                 "id": store.id,
                 "name": store.name,
                 "address": store.address,
+                "phone": store.phone,
+                "paymob_enabled": paymob_is_enabled(store),
             },
             "table": {
                 "id": table.id,
@@ -259,10 +340,15 @@ class PublicTableMenuView(APIView):
                 "capacity": table.capacity,
                 "is_available": table.is_available,
             },
+            "branches": [
+                {"id": b.id, "name": b.name}
+                for b in store.branches.filter(is_active=True).order_by("name")
+            ],
+            "trending_items": trending_items_for_store(store, branch=branch),
             "items": items_data,
         }
         return Response(data, status=status.HTTP_200_OK)
-
+    
 
 class PublicTableOrderCreateView(APIView):
     """
@@ -277,7 +363,14 @@ class PublicTableOrderCreateView(APIView):
             is_active=True,
         )
         store = table.store
-        branch = store.branches.first()
+        branch_id = request.data.get("branch_id")
+        branch = select_branch_for_store(store, branch_id)
+
+        if not branch:
+            return Response(
+                {"detail": "لا يوجد فرع متاح لهذا المتجر."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         items_data = request.data.get("items", [])
         if not items_data:
@@ -289,6 +382,21 @@ class PublicTableOrderCreateView(APIView):
         customer_name = request.data.get("customer_name") or None
         customer_phone = request.data.get("customer_phone") or None
         notes = request.data.get("notes") or ""
+        order_type = request.data.get("order_type", "IN_STORE")
+        payment_method = request.data.get("payment_method", "CASH")
+        delivery_address = request.data.get("delivery_address") or None
+
+        if order_type == "DELIVERY" and not delivery_address:
+            return Response(
+                {"detail": "العنوان مطلوب في حالة الدليفري."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if payment_method == "PAYMOB" and not paymob_is_enabled(store):
+            return Response(
+                {"detail": "الدفع عبر PayMob غير متاح لهذا الفرع."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         with transaction.atomic():
             order = Order.objects.create(
@@ -298,9 +406,12 @@ class PublicTableOrderCreateView(APIView):
                 customer_name=customer_name,
                 customer_phone=customer_phone,
                 notes=notes,
+                order_type=order_type,
+                payment_method=payment_method,
+                delivery_address=delivery_address,
                 status="PENDING",
             )
-
+            
             for row in items_data:
                 item_id = row.get("item")
                 quantity = int(row.get("quantity", 1))
@@ -329,12 +440,14 @@ class PublicStoreMenuView(APIView):
 
     def get(self, request, store_id):
         store = get_object_or_404(Store, pk=store_id)
+        branch_id = request.query_params.get("branch_id")
+        branch = select_branch_for_store(store, branch_id)
 
         items_qs = Item.objects.filter(
             store=store,
             is_active=True,
         ).select_related("category")
-
+        
         items_data = []
         for item in items_qs:
             items_data.append(
@@ -348,7 +461,7 @@ class PublicStoreMenuView(APIView):
                 }
             )
 
-        paymob_enabled = bool((store.paymob_keys or {}).get("enabled", False))
+        paymob_enabled = paymob_is_enabled(store)
 
         data = {
             "store": {
@@ -358,10 +471,15 @@ class PublicStoreMenuView(APIView):
                 "phone": store.phone,
                 "paymob_enabled": paymob_enabled,  # ✅ جديد
             },
+            "branches": [
+                {"id": b.id, "name": b.name}
+                for b in store.branches.filter(is_active=True).order_by("name")
+            ],
+            "trending_items": trending_items_for_store(store, branch=branch),
             "items": items_data,
         }
         return Response(data, status=status.HTTP_200_OK)
-
+    
 
 class PublicStoreOrderCreateView(APIView):
     """
@@ -372,13 +490,21 @@ class PublicStoreOrderCreateView(APIView):
 
     def post(self, request, store_id):
         store = get_object_or_404(Store, pk=store_id)
-        branch = store.branches.first()
+        branch_id = request.data.get("branch_id")
+        branch = select_branch_for_store(store, branch_id)
+
+        if not branch:
+            return Response(
+                {"detail": "لا يوجد فرع متاح لهذا المتجر."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         items_data = request.data.get("items", [])
         if not items_data:
             return Response(
                 {"detail": "لا يمكن إنشاء طلب بدون أصناف."},
                 status=status.HTTP_400_BAD_REQUEST,
+                
             )
 
         customer_name = request.data.get("customer_name") or None
@@ -394,14 +520,14 @@ class PublicStoreOrderCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # ✅ منع PayMob لو مش مفعل للفرع
-        paymob_enabled = bool((store.paymob_keys or {}).get("enabled", False))
+        # ✅ منع PayMob لو مش مفعل للفرع␊
+        paymob_enabled = paymob_is_enabled(store)
         if payment_method == "PAYMOB" and not paymob_enabled:
             return Response(
                 {"detail": "الدفع عبر PayMob غير متاح لهذا الفرع."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
+            
         with transaction.atomic():
             order = Order.objects.create(
                 store=store,

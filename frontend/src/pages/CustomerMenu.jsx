@@ -4,8 +4,9 @@ import React, {
   useMemo,
   useState,
   useCallback,
+  useRef,
 } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import api from '../lib/api';
 import { notifySuccess, notifyError } from '../lib/notifications';
 
@@ -62,6 +63,9 @@ export default function CustomerMenu() {
   const [store, setStore] = useState(null);
   const [table, setTable] = useState(null);
   const [items, setItems] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranchId, setSelectedBranchId] = useState(null);
+  const [trendingItems, setTrendingItems] = useState([]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -70,39 +74,65 @@ export default function CustomerMenu() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [orderType, setOrderType] = useState('IN_STORE');
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
 
   const [submitting, setSubmitting] = useState(false);
   const [successOrder, setSuccessOrder] = useState(null);
+  const [liveStatus, setLiveStatus] = useState(null);
+  const [activeOrderId, setActiveOrderId] = useState(null);
+  const wsRef = useRef(null);
+  const lastAnnouncedStatusRef = useRef(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const branchParam = params.get('branch');
+    if (branchParam) {
+      setSelectedBranchId(branchParam);
+    }
+  }, []);
 
   // =====================
   // جلب بيانات المينيو من الـ API
   // =====================
-  const fetchMenu = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const fetchMenu = useCallback(
+    async (branchId = null) => {
+      try {
+        setLoading(true);
+        setError(null);
 
-      const res = await api.get(`/orders/public/table/${tableId}/menu/`);
-      setStore(res.data.store);
-      setTable(res.data.table);
-      setItems(res.data.items || []);
-    } catch (err) {
-      console.error('خطأ في تحميل المينيو:', err);
-      const msg = isAr
-        ? 'حدث خطأ أثناء تحميل قائمة الطعام، برجاء إبلاغ الكاشير.'
-        : 'An error occurred while loading the menu. Please inform the cashier.';
-      setError(msg);
-      notifyError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [tableId, isAr]);
+        const res = await api.get(`/orders/public/table/${tableId}/menu/`, {
+          params: branchId ? { branch_id: branchId } : undefined,
+        });
+        setStore(res.data.store);
+        setTable(res.data.table);
+        setItems(res.data.items || []);
+        setTrendingItems(res.data.trending_items || []);
+        setBranches(res.data.branches || []);
+
+        if (!selectedBranchId && res.data.branches?.length) {
+          setSelectedBranchId(String(res.data.branches[0].id));
+        }
+      } catch (err) {
+        console.error('خطأ في تحميل المينيو:', err);
+        const msg = isAr
+          ? 'حدث خطأ أثناء تحميل قائمة الطعام، برجاء إبلاغ الكاشير.'
+          : 'An error occurred while loading the menu. Please inform the cashier.';
+        setError(msg);
+        notifyError(msg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [tableId, isAr, selectedBranchId]
+  );
 
   useEffect(() => {
     if (tableId) {
-      fetchMenu();
+      fetchMenu(selectedBranchId);
     }
-  }, [tableId, fetchMenu]);
+  }, [tableId, fetchMenu, selectedBranchId]);
 
   // =====================
   // التصنيفات
@@ -111,11 +141,37 @@ export default function CustomerMenu() {
     const set = new Set();
     items.forEach((item) => {
       if (item.category_name) {
-        set.add(item.category_name);
+        set.add(item.category_name);        
       }
     });
     return Array.from(set);
   }, [items]);
+
+  const currentStatus = useMemo(
+    () => liveStatus || successOrder?.status || null,
+    [liveStatus, successOrder]
+  );
+
+  const selectedBranch = useMemo(
+    () => branches.find((b) => String(b.id) === String(selectedBranchId)) || null,
+    [branches, selectedBranchId]
+  );
+
+  // احترم تفعيل PayMob للفرع
+  useEffect(() => {
+    if (store && !store.paymob_enabled && paymentMethod === 'PAYMOB') {
+      setPaymentMethod('CASH');
+      notifyError(
+        isAr ? 'PayMob غير متاح لهذا الفرع.' : 'PayMob is not available for this store.'
+      );
+    }
+  }, [isAr, paymentMethod, store]);
+
+  useEffect(() => {
+    if (orderType !== 'DELIVERY') {
+      setDeliveryAddress('');
+    }
+  }, [orderType]);
 
   // =====================
   // فلترة الأصناف
@@ -193,10 +249,15 @@ export default function CustomerMenu() {
     );
   };
 
-  const handleClearCart = () => {
+  const handleClearCart = (preserveSuccess = false) => {
     setCart([]);
     setNotes('');
-    setSuccessOrder(null);
+    setDeliveryAddress('');
+    if (!preserveSuccess) {
+      setSuccessOrder(null);
+      setActiveOrderId(null);
+      setLiveStatus(null);
+    }
   };
 
   const subtotal = useMemo(
@@ -219,6 +280,17 @@ export default function CustomerMenu() {
       return;
     }
 
+    if (orderType === 'DELIVERY' && !deliveryAddress.trim()) {
+      notifyError(isAr ? 'برجاء إدخال عنوان التوصيل.' : 'Please enter delivery address.');
+      return;
+    }
+
+    if (paymentMethod === 'PAYMOB' && !store?.paymob_enabled) {
+      notifyError(isAr ? 'PayMob غير متاح لهذا الفرع.' : 'PayMob is not available for this store.');
+      setPaymentMethod('CASH');
+      return;
+    }
+
     setSubmitting(true);
     setSuccessOrder(null);
 
@@ -227,6 +299,10 @@ export default function CustomerMenu() {
         customer_name: customerName || null,
         customer_phone: customerPhone || null,
         notes,
+        order_type: orderType,
+        payment_method: paymentMethod,
+        delivery_address: orderType === 'DELIVERY' ? deliveryAddress.trim() : null,
+        branch_id: selectedBranchId ? Number(selectedBranchId) : null,
         items: cart.map((row) => ({
           item: row.itemId,
           quantity: row.quantity,
@@ -238,12 +314,15 @@ export default function CustomerMenu() {
         payload
       );
       setSuccessOrder(res.data);
-      handleClearCart();
+      setActiveOrderId(res.data.id);
+      setLiveStatus(res.data.status);
+      lastAnnouncedStatusRef.current = res.data.status;
+      handleClearCart(true);
 
       notifySuccess(
         isAr
           ? `تم إرسال الطلب بنجاح! رقم الطلب #${res.data.id}`
-          : `Order sent successfully! Order #${res.data.id}`
+          : `Order sent successfully! Order #${res.data.id}`          
       );
     } catch (err) {
       console.error('خطأ في إرسال الطلب:', err);
@@ -258,6 +337,103 @@ export default function CustomerMenu() {
       setSubmitting(false);
     }
   };
+
+  const formatStatusLabel = useCallback(
+    (status) => {
+      const map = {
+        PENDING: isAr ? 'جديد' : 'Pending',
+        PREPARING: isAr ? 'قيد التحضير' : 'Preparing',
+        READY: isAr ? 'جاهز' : 'Ready',
+        SERVED: isAr ? 'تم التقديم' : 'Served',
+        PAID: isAr ? 'مدفوع' : 'Paid',
+        CANCELLED: isAr ? 'ملغي' : 'Cancelled',
+      };
+      return map[status] || status || (isAr ? 'غير معروف' : 'Unknown');
+    },
+    [isAr]
+  );
+
+  const speakStatus = useCallback(
+    (text) => {
+      try {
+        if ('speechSynthesis' in window) {
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = isAr ? 'ar-EG' : 'en-US';
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utter);
+        }
+      } catch (error) {
+        console.warn('Speech synthesis not available', error);
+      }
+    },
+    [isAr]
+  );
+
+  const handleKdsOrderEvent = useCallback(
+    (order) => {
+      if (!order || !activeOrderId || order.id !== activeOrderId) return;
+      setLiveStatus(order.status);
+      setSuccessOrder((prev) =>
+        prev ? { ...prev, status: order.status, total: order.total ?? prev.total } : prev
+      );
+
+      if (
+        ['PREPARING', 'READY', 'SERVED', 'PAID'].includes(order.status) &&
+        lastAnnouncedStatusRef.current !== order.status
+      ) {
+        const phrase =
+          order.status === 'READY'
+            ? isAr
+              ? 'طلبك جاهز للاستلام.'
+              : 'Your order is ready.'
+            : order.status === 'PREPARING'
+              ? isAr
+                ? 'طلبك قيد التحضير.'
+                : 'Your order is being prepared.'
+              : order.status === 'PAID'
+                ? isAr
+                  ? 'تم تسجيل الدفع. شكرًا!'
+                  : 'Payment recorded. Thank you!'
+                : isAr
+                  ? 'تم تقديم الطلب.'
+                  : 'Order served.';
+
+        notifySuccess(phrase);
+        speakStatus(phrase);
+        lastAnnouncedStatusRef.current = order.status;
+      }
+    },
+    [activeOrderId, isAr, speakStatus]
+  );
+
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${protocol}://${window.location.host}/ws/kds/`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'order_created' || data.type === 'order_updated') {
+          handleKdsOrderEvent(data.order);
+        }
+      } catch (error) {
+        console.error('KDS message parse error:', error);
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [handleKdsOrderEvent]);
+
+  useEffect(() => {
+    if (!activeOrderId && successOrder?.id) {
+      setActiveOrderId(successOrder.id);
+      setLiveStatus(successOrder.status);
+    }
+  }, [activeOrderId, successOrder]);
 
   // =====================
   // Screens: Loading / Error
@@ -324,7 +500,7 @@ export default function CustomerMenu() {
 
           <div className="flex items-center gap-3">
             <div className="hidden sm:block text-right text-[11px] text-gray-500 dark:text-gray-400">
-              <p>{isAr ? 'مرحبًا بك 👋' : 'Welcome 👋'}</p>
+              <p>{isAr ? 'مرحبًا بك 👋' : 'Welcome 👋'}</p>            
               <p>
                 {isAr
                   ? 'اطلب بسهولة وسنجهز لك طلبك'
@@ -365,8 +541,8 @@ export default function CustomerMenu() {
               className="inline-flex items-center justify-center rounded-xl border border-gray-200 p-1.5 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
             >
               {theme === 'dark' ? (
-                <span className="flex items-center gap-1 text-[11px]">
-                  <span>☀️</span>
+                <span className="flex items-center gap-1 text-[11px]">␊
+                  <span>☀️</span>                  
                   <span className="hidden sm:inline">
                     {isAr ? 'وضع فاتح' : 'Light'}
                   </span>
@@ -380,6 +556,15 @@ export default function CustomerMenu() {
                 </span>
               )}
             </button>
+
+            {store?.id && (
+              <Link
+                to={`/store/${store.id}/menu${selectedBranchId ? `?branch=${selectedBranchId}` : ''}`}
+                className="hidden sm:inline-flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-700"
+              >
+                {isAr ? 'منيو الفرع العامة' : 'Store menu'}
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -387,28 +572,129 @@ export default function CustomerMenu() {
       {/* Content */}
       <main className="flex-1 px-4 pt-3 pb-28">
         <div className="max-w-3xl mx-auto space-y-3">
-          {/* بيانات العميل (اختياري) */}
-          <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-3 space-y-2">
-            <p className="text-xs font-semibold text-gray-800 dark:text-gray-100 mb-1">
-              {isAr ? 'بيانات التواصل (اختياري)' : 'Contact details (optional)'}
-            </p>
+          {/* بيانات الطلب */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-3 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-gray-800 dark:text-gray-100">
+                {isAr ? 'بيانات الطلب' : 'Order details'}
+              </p>
+
+              {currentStatus && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-600/60 dark:bg-amber-900/20 dark:text-amber-100">
+                  {isAr ? 'حالة الطلب: ' : 'Order status: '}
+                  {formatStatusLabel(currentStatus)}
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-gray-600 dark:text-gray-300">
+                  {isAr ? 'اختر الفرع' : 'Choose branch'}
+                </label>
+                <select
+                  value={selectedBranchId || ''}
+                  onChange={(e) => setSelectedBranchId(e.target.value || null)}
+                  className="text-xs border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:text-gray-100"
+                >
+                  {!selectedBranchId && <option value="">{isAr ? 'اختر الفرع' : 'Select branch'}</option>}
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-gray-600 dark:text-gray-300">
+                  {isAr ? 'نوع الطلب' : 'Order type'}
+                </label>
+                <div className="flex rounded-full border border-gray-200 overflow-hidden dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setOrderType('IN_STORE')}
+                    className={`px-3 py-1 text-[11px] ${
+                      orderType === 'IN_STORE'
+                        ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
+                        : 'text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    {isAr ? 'داخل المكان' : 'In store'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrderType('DELIVERY')}
+                    className={`px-3 py-1 text-[11px] ${
+                      orderType === 'DELIVERY'
+                        ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900'
+                        : 'text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    {isAr ? 'دليفري' : 'Delivery'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {orderType === 'DELIVERY' && (
+              <textarea
+                placeholder={isAr ? 'عنوان التوصيل بالتفصيل' : 'Delivery address (details)'}
+                value={deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                rows={2}
+                className="w-full text-xs border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-none dark:text-gray-100"
+              />
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+              <span className="text-gray-500 dark:text-gray-400">
+                {isAr ? 'طريقة الدفع:' : 'Payment method:'}
+              </span>
+              <div className="flex rounded-full border border-gray-200 overflow-hidden dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('CASH')}
+                  className={`px-3 py-1 ${
+                    paymentMethod === 'CASH'
+                      ? 'bg-emerald-600 text-white dark:bg-emerald-500'
+                      : 'text-gray-600 dark:text-gray-300'
+                  }`}
+                >
+                  {isAr ? 'عند الاستلام' : 'Cash'}
+                </button>
+                {store?.paymob_enabled && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('PAYMOB')}
+                    className={`px-3 py-1 ${
+                      paymentMethod === 'PAYMOB'
+                        ? 'bg-blue-600 text-white dark:bg-blue-500'
+                        : 'text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    PayMob
+                  </button>
+                )}
+              </div>
+              {!store?.paymob_enabled && (
+                <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {isAr ? 'الدفع الإلكتروني غير مفعل لهذا الفرع' : 'Online payment is disabled for this store'}
+                </span>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <input
                 type="text"
-                placeholder={
-                  isAr ? 'اسمك (اختياري)' : 'Your name (optional)'
-                }
+                placeholder={isAr ? 'اسمك (اختياري)' : 'Your name (optional)'}
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 className="text-xs border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:text-gray-100"
               />
               <input
                 type="text"
-                placeholder={
-                  isAr
-                    ? 'رقم الموبايل (اختياري)'
-                    : 'Mobile number (optional)'
-                }
+                placeholder={isAr ? 'رقم الموبايل (اختياري)' : 'Mobile number (optional)'}
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 className="text-xs border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/40 dark:text-gray-100"
@@ -427,7 +713,48 @@ export default function CustomerMenu() {
             />
           </section>
 
-          {/* البحث + الفلاتر */}
+          {/* المنتجات الترندي */}
+          {trendingItems.length > 0 && (
+            <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-xs font-semibold text-gray-800 dark:text-gray-100">
+                  {isAr ? 'الأكثر طلبًا في الفرع' : 'Trending in this branch'}
+                </p>
+                {selectedBranch && (
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {trendingItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleAddToCart(item)}
+                    className="text-right bg-blue-50/60 dark:bg-slate-950 hover:bg-blue-100 dark:hover:bg-slate-800 border border-blue-100 dark:border-slate-800 rounded-2xl p-3 flex flex-col justify-between min-h-[90px]"
+                  >
+                    <div>
+                      <p className="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate">
+                        {item.name}
+                      </p>
+                      {item.category_name && (
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          {item.category_name}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-2 text-xs font-bold text-blue-700 dark:text-blue-300">
+                      {numberFormatter.format(Number(item.unit_price || 0))}{' '}
+                      {isAr ? 'ج.م' : 'EGP'}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* البحث + الفلاتر */}          
           <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-3">
             <div className="flex items-center gap-2 mb-3">
               <input
@@ -511,15 +838,27 @@ export default function CustomerMenu() {
 
           {/* رسالة نجاح بعد الطلب */}
           {successOrder && (
-            <section className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-100 rounded-2xl p-3 text-xs">
-              <p className="font-semibold mb-1">
-                {isAr
-                  ? 'تم استلام طلبك بنجاح 🎉'
-                  : 'Your order has been received 🎉'}
-              </p>
+            <section className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-100 rounded-2xl p-3 text-xs space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold">
+                  {isAr
+                    ? 'تم استلام طلبك بنجاح 🎉'
+                    : 'Your order has been received 🎉'}
+                </p>
+                {currentStatus && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/70 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-100">
+                    {formatStatusLabel(currentStatus)}
+                  </span>
+                )}
+              </div>
               <p>
                 {isAr ? 'رقم الطلب' : 'Order number'}: #{successOrder.id}
               </p>
+              {selectedBranch && (
+                <p className="text-[11px] text-emerald-700/80 dark:text-emerald-100/80">
+                  {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+                </p>
+              )}
               <p>
                 {isAr ? 'الإجمالي: ' : 'Total: '}
                 {numberFormatter.format(Number(successOrder.total || 0))}{' '}
@@ -527,11 +866,11 @@ export default function CustomerMenu() {
               </p>
               <p className="text-[11px] mt-1">
                 {isAr
-                  ? 'برجاء انتظار تجهيز الطلب، وسيتم خدمتك على نفس الطاولة.'
-                  : 'Please wait while we prepare your order; we will serve you at the same table.'}
+                  ? 'نقوم بتحديث الحالة تلقائيًا. ستصلك تنبيهات صوتية عند تجهيز الطلب.'
+                  : 'We update the status automatically. You will get voice alerts when the order is prepared.'}
               </p>
             </section>
-          )}
+          )}          
         </div>
       </main>
 

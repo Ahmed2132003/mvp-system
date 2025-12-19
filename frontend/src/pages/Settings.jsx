@@ -1,5 +1,5 @@
 // src/pages/Settings.jsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifySuccess, notifyError } from '../lib/notifications';
@@ -112,15 +112,38 @@ export default function SettingsPage() {
     expiry_months: '',
   });
 
-const [attendanceQRs, _setAttendanceQRs] = useState([]);
+  const [attendanceQRs, _setAttendanceQRs] = useState([]);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
+
+  const storeMenuUrl = useMemo(
+    () => (store?.id ? `${window.location.origin}/store/${store.id}/menu` : ''),
+    [store]
+  );
+  const tableMenuTemplate = useMemo(
+    () => (store?.id ? `${window.location.origin}/table/{table_id}/menu` : ''),
+    [store]
+  );
 
   const showSuccess = (msg) => {
     setSuccessMessage(msg);
     notifySuccess(msg);
     setTimeout(() => setSuccessMessage(''), 2500);
   };
+
+  const copyValue = useCallback(
+    async (value, label) => {
+      if (!value) return;
+      try {
+        await navigator.clipboard.writeText(value);
+        notifySuccess(label || (isAr ? 'تم النسخ' : 'Copied'));
+      } catch (err) {
+        notifyError(isAr ? 'تعذر النسخ إلى الحافظة' : 'Could not copy to clipboard');
+        console.error('Copy failed', err);
+      }
+    },
+    [isAr]
+  );
 
   const fetchAttendanceQRs = useCallback(async () => {
     // ✅ تم إيقافه لأن النظام أصبح QR موحّد للفرع (Store-level)
@@ -603,7 +626,7 @@ const [attendanceQRs, _setAttendanceQRs] = useState([]);
                         <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl p-4">
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">
                             {isAr ? 'QR منيو الفرع' : 'Store menu QR'}
-                          </p>
+                          </p>                          
                           <img
                             alt="Store Menu QR"
                             className="w-40 h-40 rounded-xl border border-gray-200 dark:border-slate-700 bg-white"
@@ -614,8 +637,31 @@ const [attendanceQRs, _setAttendanceQRs] = useState([]);
                               ? 'امسح الكود لفتح منيو الطلبات العامة للفرع.'
                               : 'Scan to open the public store menu.'}
                           </p>
+                          {storeMenuUrl && (
+                            <div className="mt-3 space-y-1">
+                              <div className="flex items-center justify-between gap-2 text-[11px] text-gray-600 dark:text-gray-300">
+                                <span className="truncate">{storeMenuUrl}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyValue(storeMenuUrl, isAr ? 'تم نسخ رابط المنيو' : 'Menu link copied')}
+                                  className="px-2 py-1 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                                >
+                                  {isAr ? 'نسخ' : 'Copy'}
+                                </button>
+                              </div>
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {isAr
+                                  ? 'قالب رابط منيو الطاولة (استبدل {table_id} برقم الطاولة):'
+                                  : 'Table menu link template (replace {table_id}):'}
+                              </p>
+                              <div className="text-[11px] font-mono bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-lg px-2 py-1">
+                                {tableMenuTemplate}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
+                                            
                       {/* Store Attendance QR (موحّد للحضور والانصراف) */}
                       {store?.qr_attendance_base64 && (
                         <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl p-4">

@@ -4,6 +4,7 @@ import React, {
   useMemo,
   useState,
   useCallback,
+  useRef,
 } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import api from '../lib/api';
@@ -102,11 +103,15 @@ export default function StoreMenu() {
 
   const [store, setStore] = useState(null);
   const [items, setItems] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [selectedBranchId, setSelectedBranchId] = useState(null);
+  const [trendingItems, setTrendingItems] = useState([]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
 
   const [cart, setCart] = useState([]);
+
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
@@ -114,34 +119,58 @@ export default function StoreMenu() {
   const [orderType, setOrderType] = useState('IN_STORE'); // IN_STORE | DELIVERY
   const [paymentMethod, setPaymentMethod] = useState('CASH'); // CASH | PAYMOB
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [tableMenuCode, setTableMenuCode] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const [successOrder, setSuccessOrder] = useState(null);
-
-  // ============ Fetch menu from API ============
-  const fetchMenu = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const res = await api.get(`/orders/public/store/${storeId}/menu/`);
-      setStore(res.data.store);
-      setItems(res.data.items || []);
-    } catch (err) {
-      console.error('خطأ في تحميل منيو الفرع:', err);
-      const msg = isAr
-        ? 'حدث خطأ أثناء تحميل قائمة الفرع، برجاء المحاولة لاحقًا.'
-        : 'An error occurred while loading the store menu. Please try again later.';
-      setError(msg);
-      notifyError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId, isAr]);
+  const [liveStatus, setLiveStatus] = useState(null);
+  const [activeOrderId, setActiveOrderId] = useState(null);
+  const wsRef = useRef(null);
+  const lastAnnouncedStatusRef = useRef(null);
 
   useEffect(() => {
-    if (storeId) fetchMenu();
-  }, [storeId, fetchMenu]);
+    const params = new URLSearchParams(window.location.search);
+    const branchParam = params.get('branch');
+    if (branchParam) {
+      setSelectedBranchId(branchParam);
+    }
+  }, []);
+
+  // ============ Fetch menu from API ============
+  const fetchMenu = useCallback(
+    async (branchId = null) => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const res = await api.get(`/orders/public/store/${storeId}/menu/`, {
+          params: branchId ? { branch_id: branchId } : undefined,
+        });
+        setStore(res.data.store);
+        setItems(res.data.items || []);
+        setTrendingItems(res.data.trending_items || []);
+        setBranches(res.data.branches || []);
+
+        if (!selectedBranchId && res.data.branches?.length) {
+          setSelectedBranchId(String(res.data.branches[0].id));
+        }
+      } catch (err) {
+        console.error('خطأ في تحميل منيو الفرع:', err);
+        const msg = isAr
+          ? 'حدث خطأ أثناء تحميل قائمة الفرع، برجاء المحاولة لاحقًا.'
+          : 'An error occurred while loading the store menu. Please try again later.';
+        setError(msg);
+        notifyError(msg);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [storeId, isAr, selectedBranchId]
+  );
+
+  useEffect(() => {
+    if (storeId) fetchMenu(selectedBranchId);
+  }, [storeId, fetchMenu, selectedBranchId]);
 
   // ✅ لو PayMob مش enabled رجع CASH تلقائي
   useEffect(() => {
@@ -151,6 +180,12 @@ export default function StoreMenu() {
     }
   }, [store, paymentMethod, isAr]);
 
+  useEffect(() => {
+    if (orderType !== 'DELIVERY') {
+      setDeliveryAddress('');
+    }
+  }, [orderType]);
+
   // ============ التصنيفات ============
   const categories = useMemo(() => {
     const set = new Set();
@@ -159,6 +194,16 @@ export default function StoreMenu() {
     });
     return Array.from(set);
   }, [items]);
+
+  const selectedBranch = useMemo(
+    () => branches.find((b) => String(b.id) === String(selectedBranchId)) || null,
+    [branches, selectedBranchId]
+  );
+
+  const currentStatus = useMemo(
+    () => liveStatus || successOrder?.status || null,
+    [liveStatus, successOrder]
+  );
 
   // ============ فلترة ============
   const filteredItems = useMemo(() => {
@@ -232,13 +277,27 @@ export default function StoreMenu() {
     );
   };
 
-  const handleClearCart = () => {
+  const handleClearCart = (preserveSuccess = false) => {
     setCart([]);
     setNotes('');
     setDeliveryAddress('');
-    setSuccessOrder(null);
+    if (!preserveSuccess) {
+      setSuccessOrder(null);
+      setActiveOrderId(null);
+      setLiveStatus(null);
+    }
   };
 
+  const handleOpenTableMenu = () => {
+    if (!tableMenuCode.trim()) {
+      notifyError(isAr ? 'ادخل رقم أو كود الطاولة أولًا.' : 'Enter a table code first.');
+      return;
+    }
+
+    const target = `/table/${tableMenuCode.trim()}/menu`;
+    window.open(target, '_blank');
+  };
+  
   const subtotal = useMemo(
     () => cart.reduce((sum, row) => sum + row.subtotal, 0),
     [cart]
@@ -282,6 +341,7 @@ export default function StoreMenu() {
         payment_method: paymentMethod,
         delivery_address:
           orderType === 'DELIVERY' ? deliveryAddress.trim() : null,
+        branch_id: selectedBranchId ? Number(selectedBranchId) : null,
         items: cart.map((row) => ({
           item: row.itemId,
           quantity: row.quantity,
@@ -294,13 +354,16 @@ export default function StoreMenu() {
       );
 
       setSuccessOrder(res.data);
-      handleClearCart();
+      setActiveOrderId(res.data.id);
+      setLiveStatus(res.data.status);
+      lastAnnouncedStatusRef.current = res.data.status;
+      handleClearCart(true);
 
       notifySuccess(
         isAr
           ? `تم إرسال الطلب بنجاح! رقم الطلب #${res.data.id}`
           : `Order sent successfully! Order #${res.data.id}`
-      );
+      ); // ✅ الإغلاق الناقص كان هنا
 
       // ⚠️ مبدئيًا، الدفع عبر PayMob هيكون خطوة منفصلة قدام
     } catch (err) {
@@ -316,6 +379,103 @@ export default function StoreMenu() {
       setSubmitting(false);
     }
   };
+
+  const formatStatusLabel = useCallback(
+    (status) => {
+      const map = {
+        PENDING: isAr ? 'جديد' : 'Pending',
+        PREPARING: isAr ? 'قيد التحضير' : 'Preparing',
+        READY: isAr ? 'جاهز' : 'Ready',
+        SERVED: isAr ? 'تم التقديم' : 'Served',
+        PAID: isAr ? 'مدفوع' : 'Paid',
+        CANCELLED: isAr ? 'ملغي' : 'Cancelled',
+      };
+      return map[status] || status || (isAr ? 'غير معروف' : 'Unknown');
+    },
+    [isAr]
+  );
+
+  const speakStatus = useCallback(
+    (text) => {
+      try {
+        if ('speechSynthesis' in window) {
+          const utter = new SpeechSynthesisUtterance(text);
+          utter.lang = isAr ? 'ar-EG' : 'en-US';
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utter);
+        }
+      } catch (error) {
+        console.warn('Speech synthesis unavailable', error);
+      }
+    },
+    [isAr]
+  );
+
+  const handleKdsOrderEvent = useCallback(
+    (order) => {
+      if (!order || !activeOrderId || order.id !== activeOrderId) return;
+      setLiveStatus(order.status);
+      setSuccessOrder((prev) =>
+        prev ? { ...prev, status: order.status, total: order.total ?? prev.total } : prev
+      );
+
+      if (
+        ['PREPARING', 'READY', 'SERVED', 'PAID'].includes(order.status) &&
+        lastAnnouncedStatusRef.current !== order.status
+      ) {
+        const phrase =
+          order.status === 'READY'
+            ? isAr
+              ? 'طلبك جاهز للاستلام.'
+              : 'Your order is ready.'
+            : order.status === 'PREPARING'
+              ? isAr
+                ? 'طلبك قيد التحضير.'
+                : 'Your order is being prepared.'
+              : order.status === 'PAID'
+                ? isAr
+                  ? 'تم تسجيل الدفع. شكرًا!'
+                  : 'Payment recorded. Thank you!'
+                : isAr
+                  ? 'تم تقديم الطلب.'
+                  : 'Order served.';
+
+        notifySuccess(phrase);
+        speakStatus(phrase);
+        lastAnnouncedStatusRef.current = order.status;
+      }
+    },
+    [activeOrderId, isAr, speakStatus]
+  );
+
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${protocol}://${window.location.host}/ws/kds/`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'order_created' || data.type === 'order_updated') {
+          handleKdsOrderEvent(data.order);
+        }
+      } catch (error) {
+        console.error('KDS message parse error:', error);
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [handleKdsOrderEvent]);
+
+  useEffect(() => {
+    if (!activeOrderId && successOrder?.id) {
+      setActiveOrderId(successOrder.id);
+      setLiveStatus(successOrder.status);
+    }
+  }, [activeOrderId, successOrder]);
 
   // ============ Screens: Loading / Error ============
   if (loading) {
@@ -433,11 +593,18 @@ export default function StoreMenu() {
                 <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-gray-50 truncate">
                   {store.name}
                 </h2>
-                {store.address && (
-                  <p className="text-xs md:text-sm text-gray-500 mt-1 dark:text-gray-400 truncate">
-                    {store.address}
-                  </p>
-                )}
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  {store.address && (
+                    <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400 truncate">
+                      {store.address}
+                    </p>
+                  )}
+                  {selectedBranch && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
+                      {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -510,12 +677,38 @@ export default function StoreMenu() {
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-50">
                   {isAr ? 'بيانات الطلب' : 'Order details'}
                 </p>
+                {currentStatus && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-600/60 dark:bg-amber-900/20 dark:text-amber-100">
+                    {isAr ? 'الحالة: ' : 'Status: '}
+                    {formatStatusLabel(currentStatus)}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-gray-600 dark:text-gray-300">
+                    {isAr ? 'الفرع' : 'Branch'}
+                  </label>
+                  <select
+                    value={selectedBranchId || ''}
+                    onChange={(e) => setSelectedBranchId(e.target.value || null)}
+                    className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                  >
+                    {!selectedBranchId && <option value="">{isAr ? 'اختر الفرع' : 'Select branch'}</option>}
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 {/* نوع الطلب */}
-                <div className="flex items-center gap-1 text-[11px]">
-                  <span className="text-gray-500 dark:text-gray-400">
-                    {isAr ? 'نوع الطلب:' : 'Order type:'}
-                  </span>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-gray-600 dark:text-gray-300">
+                    {isAr ? 'نوع الطلب' : 'Order type'}
+                  </label>
                   <div className="flex rounded-full border border-gray-200 overflow-hidden dark:border-slate-700">
                     <button
                       type="button"
@@ -622,7 +815,87 @@ export default function StoreMenu() {
                   </span>
                 )}
               </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="text-[11px] text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl px-3 py-2 flex items-center justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-gray-800 dark:text-gray-100">
+                      {isAr ? 'منيو الطاولة' : 'Table menu'}
+                    </p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      {isAr
+                        ? 'أدخل كود الطاولة لفتح منيو الطاولة مباشرة'
+                        : 'Enter a table code to open the table menu'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tableMenuCode}
+                      onChange={(e) => setTableMenuCode(e.target.value)}
+                      className="w-24 text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-2 py-1 bg-white dark:bg-slate-900"
+                      placeholder={isAr ? 'رقم/كود' : 'Code'}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleOpenTableMenu}
+                      className="px-3 py-1 rounded-xl bg-blue-600 text-white text-[11px] hover:bg-blue-700"
+                    >
+                      {isAr ? 'فتح' : 'Open'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="hidden md:flex flex-col justify-center text-[11px] text-gray-500 dark:text-gray-400 bg-blue-50/60 dark:bg-slate-950 border border-blue-100 dark:border-slate-800 rounded-2xl px-3 py-2">
+                  <span className="font-semibold text-gray-800 dark:text-gray-100">
+                    {isAr ? 'روابط المشاركة' : 'Shareable links'}
+                  </span>
+                  <span className="mt-1 truncate">
+                    {`${window.location.origin}/store/${storeId}/menu`}
+                  </span>
+                </div>
+              </div>
             </section>
+
+            {/* المنتجات الترندي */}
+            {trendingItems.length > 0 && (
+              <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+                    {isAr ? 'الأكثر طلبًا في الفرع' : 'Trending in branch'}
+                  </p>
+                  {selectedBranch && (
+                    <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                      {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {trendingItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleAddToCart(item)}
+                      className="text-right bg-blue-50/50 dark:bg-slate-950 hover:bg-blue-100 dark:hover:bg-slate-800 border border-blue-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-500 rounded-2xl p-3 flex flex-col justify-between min-h-[100px]"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                          {item.name}
+                        </p>
+                        {item.category_name && (
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                            {item.category_name}
+                          </p>
+                        )}
+                      </div>
+                      <div className="mt-3 text-sm font-bold text-blue-700 dark:text-blue-300">
+                        {numberFormatter.format(Number(item.unit_price || 0))} {isAr ? 'ج.م' : 'EGP'}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* البحث + الفلاتر */}
             <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4">
@@ -702,24 +975,36 @@ export default function StoreMenu() {
 
             {/* رسالة نجاح بعد الطلب */}
             {successOrder && (
-              <section className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-100 rounded-2xl p-4 text-sm">
-                <p className="font-semibold mb-1">
-                  {isAr ? 'تم استلام طلبك بنجاح 🎉' : 'Your order has been received 🎉'}
-                </p>
+              <section className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-100 rounded-2xl p-4 text-sm space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold">
+                    {isAr ? 'تم استلام طلبك بنجاح 🎉' : 'Your order has been received 🎉'}
+                  </p>
+                  {currentStatus && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/70 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-100">
+                      {formatStatusLabel(currentStatus)}
+                    </span>
+                  )}
+                </div>
                 <p>{isAr ? 'رقم الطلب' : 'Order number'}: #{successOrder.id}</p>
+                {selectedBranch && (
+                  <p className="text-[11px] text-emerald-700/80 dark:text-emerald-100/80">
+                    {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+                  </p>
+                )}
                 <p>
                   {isAr ? 'الإجمالي: ' : 'Total: '}
                   {numberFormatter.format(Number(successOrder.total || 0))} {isAr ? 'ج.م' : 'EGP'}
                 </p>
                 <p className="text-xs mt-2 text-emerald-700/80 dark:text-emerald-100/80">
                   {isAr
-                    ? 'برجاء انتظار تجهيز الطلب، وسيتم التواصل معك / خدمتك حسب نوع الطلب.'
-                    : 'Please wait while we prepare your order; we will serve or deliver it according to your selection.'}
+                    ? 'نقوم بتحديث الحالة تلقائيًا، وسنرسل لك تنبيهًا صوتيًا عند جاهزية الطلب.'
+                    : 'Status updates arrive automatically with voice alerts when ready.'}
                 </p>
               </section>
             )}
           </div>
-
+          
           {/* سلة الطلب أسفل الشاشة */}
           <div className="fixed bottom-0 left-0 right-0 z-30">
             <div className="max-w-5xl mx-auto px-4 pb-3">
