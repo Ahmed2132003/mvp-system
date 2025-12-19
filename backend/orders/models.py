@@ -320,11 +320,14 @@ def serialize_order_for_kds(order: Order):
     return {
         "id": order.id,
         "status": order.status,
+        "store": order.store_id,
+        "branch": order.branch_id,
+        "branch_name": order.branch.name if order.branch else None,
         "table_number": order.table.number if order.table else None,
         "customer_name": order.customer_name,
         "total": float(order.total),
         "created_at": order.created_at.isoformat() if order.created_at else None,
-        "notes": order.notes,
+        "notes": order.notes,        
         "items": [
             {
                 "id": oi.id,

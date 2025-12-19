@@ -11,27 +11,131 @@ export default function KDS() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
+
   const wsRef = useRef(null);
   const audioContextRef = useRef(null);
-  const { selectedStoreId } = useStore();
+
+  const {
+    stores,
+    storesLoading,
+    storesError,
+    selectedStoreId,
+    selectStore,
+  } = useStore();
+
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+  const [selectedBranchId, setSelectedBranchId] = useState('');
+
   // -----------------------------
   // REST: تحميل الطلبات للـ KDS
   // -----------------------------
   const fetchKDSOrders = useCallback(async () => {
+    if (!selectedStoreId) {
+      setOrders([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
-      const res = await api.get('/orders/kds/', {
-        params: selectedStoreId ? { store_id: selectedStoreId } : {},
-      });
+      const params = { store_id: selectedStoreId };
+      if (selectedBranchId) params.branch = selectedBranchId;
+
+      const res = await api.get('/orders/kds/', { params });
       const results = Array.isArray(res.data) ? res.data : res.data.results || [];
       setOrders(results);
-    } catch (err) {      
+    } catch (err) {
       console.error('خطأ في تحميل طلبات KDS:', err);
       notifyError('حدث خطأ أثناء تحميل طلبات المطبخ، حاول تحديث الصفحة.');
     } finally {
       setLoading(false);
     }
+  }, [selectedBranchId, selectedStoreId]);
+
+  // -----------------------------
+  // تحميل الفروع المتاحة للستور الحالي
+  // -----------------------------
+  const fetchBranches = useCallback(async () => {
+    if (!selectedStoreId) {
+      setBranches([]);
+      setSelectedBranchId('');
+      return;
+    }
+
+    const storageKey = `kds_branch_${selectedStoreId}`;
+
+    try {
+      setBranchesLoading(true);
+      const res = await api.get('/branches/', {
+        params: { store_id: selectedStoreId },
+      });
+
+      const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setBranches(data);
+
+      const savedBranch = localStorage.getItem(storageKey);
+
+      setSelectedBranchId((current) => {
+        // لو المستخدم مختار "كل الفروع"
+        if (current === '') return '';
+
+        // لو الاختيار الحالي موجود ضمن الفروع الجديدة
+        if (current && data.some((b) => String(b.id) === String(current))) {
+          return String(current);
+        }
+
+        // لو السيفد كان "كل الفروع"
+        if (savedBranch === '') return '';
+
+        // لو السيفد موجود ضمن الفروع الجديدة
+        if (savedBranch && data.some((b) => String(b.id) === String(savedBranch))) {
+          return String(savedBranch);
+        }
+
+        // fallback: أول فرع
+        const firstId = data[0]?.id ? String(data[0].id) : '';
+        return firstId;
+      });
+    } catch (err) {
+      console.error('خطأ في تحميل الفروع المتاحة:', err);
+      notifyError('تعذر تحميل الفروع المتاحة لهذا المتجر.');
+      setBranches([]);
+      setSelectedBranchId('');
+    } finally {
+      setBranchesLoading(false);
+    }
   }, [selectedStoreId]);
+
+  useEffect(() => {
+    fetchBranches();
+  }, [fetchBranches]);
+
+  useEffect(() => {
+    if (!selectedStoreId) return;
+
+    const storageKey = `kds_branch_${selectedStoreId}`;
+    if (selectedBranchId) {
+      localStorage.setItem(storageKey, selectedBranchId);
+    } else {
+      localStorage.removeItem(storageKey);
+    }
+  }, [selectedBranchId, selectedStoreId]);
+
+  const orderMatchesContext = useCallback(
+    (order) => {
+      const sameStore = selectedStoreId
+        ? String(order.store) === String(selectedStoreId)
+        : true;
+
+      const sameBranch = selectedBranchId
+        ? String(order.branch) === String(selectedBranchId)
+        : true;
+
+      return sameStore && sameBranch;
+    },
+    [selectedBranchId, selectedStoreId]
+  );
 
   // -----------------------------
   // Handlers لتحديث الـ state
@@ -76,6 +180,7 @@ export default function KDS() {
 
   const handleOrderCreated = useCallback(
     (order) => {
+      if (!orderMatchesContext(order)) return;
       if (!ACTIVE_STATUSES.includes(order.status)) return;
 
       setOrders((prev) => {
@@ -89,11 +194,13 @@ export default function KDS() {
         return [...prev, order];
       });
     },
-    [playTone]
+    [orderMatchesContext, playTone]
   );
 
   const handleOrderUpdated = useCallback(
     (order) => {
+      if (!orderMatchesContext(order)) return;
+
       setOrders((prev) => {
         const previous = prev.find((o) => o.id === order.id);
 
@@ -118,7 +225,7 @@ export default function KDS() {
         return prev.map((o) => (o.id === order.id ? order : o));
       });
     },
-    [playTone, statusLabels]
+    [orderMatchesContext, playTone, statusLabels]
   );
 
   // -----------------------------
@@ -181,9 +288,14 @@ export default function KDS() {
       await api.patch(
         `/orders/${orderId}/`,
         { status: newStatus },
-        { params: selectedStoreId ? { store_id: selectedStoreId } : {} }
+        {
+          params: {
+            ...(selectedStoreId ? { store_id: selectedStoreId } : {}),
+            ...(selectedBranchId ? { branch: selectedBranchId } : {}),
+          },
+        }
       );
-      
+
       let msg = '';
       if (newStatus === 'PREPARING') msg = 'تم بدء تحضير الطلب.';
       else if (newStatus === 'READY') msg = 'الطلب جاهز للتقديم.';
@@ -206,21 +318,20 @@ export default function KDS() {
       PREPARING: [],
       READY: [],
     };
+
     orders.forEach((order) => {
       if (byStatus[order.status]) {
         byStatus[order.status].push(order);
       }
     });
+
     return byStatus;
   }, [orders]);
 
   const renderOrderCard = (order, column) => {
     const createdAt = order.created_at ? new Date(order.created_at) : null;
     const timeLabel = createdAt
-      ? createdAt.toLocaleTimeString('ar-EG', {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
+      ? createdAt.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
       : '--';
 
     return (
@@ -232,9 +343,11 @@ export default function KDS() {
           <div>
             <p className="text-sm font-bold text-gray-900">#{order.id}</p>
             <p className="text-[11px] text-gray-500">
-              {order.table_number ? `طاولة ${order.table_number}` : 'بدون طاولة'}
+              {order.table_number ? `طاولة ${order.table_number}` : 'بدون طاولة'}{' '}
+              {order.branch_name ? `• ${order.branch_name}` : ''}
             </p>
           </div>
+
           <div className="text-right">
             <p className="text-[11px] text-gray-500">{timeLabel}</p>
             <p className="text-[10px] text-gray-400">
@@ -337,7 +450,7 @@ export default function KDS() {
   };
 
   // -----------------------------
-  // UI عام (نفس ستايل الداشبورد/POS)
+  // UI عام
   // -----------------------------
   return (
     <div className="min-h-screen bg-gray-50">
@@ -393,6 +506,61 @@ export default function KDS() {
             </div>
 
             <div className="flex items-center gap-3">
+              <div className="hidden md:block text-right">
+                <label className="sr-only" htmlFor="kds-store-switcher">
+                  اختيار المتجر
+                </label>
+                <select
+                  id="kds-store-switcher"
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={selectedStoreId || ''}
+                  onChange={(e) => selectStore(e.target.value || null)}
+                  disabled={storesLoading || !stores.length}
+                >
+                  {storesLoading && <option>جارٍ تحميل المتاجر...</option>}
+                  {!storesLoading && stores.length === 0 && (
+                    <option>لا توجد متاجر متاحة</option>
+                  )}
+                  {!storesLoading &&
+                    stores.map((store) => (
+                      <option key={store.id} value={store.id}>
+                        {store.name}
+                      </option>
+                    ))}
+                </select>
+
+                {storesError && (
+                  <p className="text-xs text-red-600 mt-1">{storesError}</p>
+                )}
+              </div>
+
+              <div className="hidden md:block text-right">
+                <label className="sr-only" htmlFor="kds-branch-switcher">
+                  اختيار الفرع
+                </label>
+                <select
+                  id="kds-branch-switcher"
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={selectedBranchId}
+                  onChange={(e) => setSelectedBranchId(e.target.value)}
+                  disabled={!selectedStoreId || branchesLoading || branches.length === 0}
+                >
+                  <option value="">كل الفروع (حسب الصلاحيات)</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+
+                {branchesLoading && (
+                  <p className="text-xs text-gray-500 mt-1">جاري تحميل الفروع...</p>
+                )}
+                {!branchesLoading && selectedStoreId && branches.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-1">لا توجد فروع لهذا المتجر.</p>
+                )}
+              </div>
+
               <span
                 className={`text-[11px] px-3 py-1 rounded-full border ${
                   wsConnected
