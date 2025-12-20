@@ -1,25 +1,19 @@
 # backend/reports/views.py
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from datetime import date, timedelta
 
 from django.db.models import Sum, F, Count, Q
 from django.db.models.functions import TruncHour, TruncDate, TruncMonth
-from django.db.utils import ProgrammingError, OperationalError
+from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
 from django.utils.dateparse import parse_date
-from datetime import timedelta
 
-from orders.models import Order, OrderItem, Payment
-from inventory.models import Inventory
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from django.db.models import Sum
-from django.utils import timezone
-from datetime import date
 
-from core.models import PayrollPeriod, EmployeeLedger
+from core.models import EmployeeLedger, PayrollPeriod
+from inventory.models import Inventory
+from orders.models import Order, OrderItem, Payment
 
 
 def _empty_summary():
@@ -56,21 +50,21 @@ def api_reports(request):
         today = timezone.now().date()
         week_ago = today - timedelta(days=7)
         month_ago = today - timedelta(days=30)
-        
+
         paid_filter = Q(status='PAID') | Q(is_paid=True)
 
         # مبيعات اليوم / الأسبوع / الشهر (طلبات مدفوعة فقط)
         daily_qs = Order.objects.filter(created_at__date=today).filter(paid_filter)
         weekly_qs = Order.objects.filter(created_at__date__gte=week_ago).filter(paid_filter)
         monthly_qs = Order.objects.filter(created_at__date__gte=month_ago).filter(paid_filter)
-        
+
         daily = daily_qs.aggregate(total=Sum('total'))['total'] or 0
         weekly = weekly_qs.aggregate(total=Sum('total'))['total'] or 0
         monthly = monthly_qs.aggregate(total=Sum('total'))['total'] or 0
 
         daily_orders_count = daily_qs.count()
         total_orders = Order.objects.filter(paid_filter).count()
-        
+
         avg_ticket = daily / daily_orders_count if daily_orders_count > 0 else 0
 
         # مبيعات اليوم موزعة على الساعات
@@ -108,7 +102,7 @@ def api_reports(request):
         # أعلى الأصناف مبيعًا
         top_items_qs = (
             OrderItem.objects
-            .filter(Q(order__status='PAID') | Q(order__is_paid=True))            
+            .filter(Q(order__status='PAID') | Q(order__is_paid=True))
             .values('item__name')
             .annotate(total_sold=Sum('quantity'))
             .order_by('-total_sold')[:5]
@@ -296,6 +290,145 @@ def sales_report(request):
             "top_items": [],
             "payment_breakdown": [],
         })
+
+
+def _parse_period_filter(now, period_type, period_value, request):
+    """
+    Return normalized period_type, period_value (string) and filter kwargs
+    using dynamic lookups like created_at__date / __month / __year.
+    """
+    lookup_map = {
+        "day": "created_at__date",
+        "month": "created_at__month",
+        "year": "created_at__year",
+    }
+    reverse_lookup = {v: k for k, v in lookup_map.items()}
+
+    # Highest priority: explicit created_at__* query params
+    for lookup in lookup_map.values():
+        if lookup in request.query_params:
+            raw_value = request.query_params.get(lookup)
+            parsed_value, normalized = _parse_lookup_value(lookup, raw_value, now)
+            return reverse_lookup[lookup], normalized, {lookup: parsed_value}
+
+    # Fallback to period_type / period_value params
+    clean_period_type = (period_type or "day").lower()
+    if clean_period_type not in lookup_map:
+        clean_period_type = "day"
+
+    filter_lookup = lookup_map[clean_period_type]
+    parsed_value, normalized = _parse_lookup_value(filter_lookup, period_value, now)
+
+    return clean_period_type, normalized, {filter_lookup: parsed_value}
+
+
+def _parse_lookup_value(lookup, raw_value, now):
+    """
+    Normalize lookup values for date/month/year filters.
+    Returns (value_for_filter, normalized_value_for_response_as_str)
+    """
+    if lookup.endswith("__date"):
+        parsed = parse_date(raw_value) if raw_value else None
+        parsed = parsed or now.date()
+        return parsed, parsed.isoformat()
+
+    default_int = now.date().month if lookup.endswith("__month") else now.date().year
+    parsed_int = default_int
+
+    if raw_value:
+        try:
+            parsed_int = int(raw_value)
+        except (TypeError, ValueError):
+            # accept yyyy-mm formatted month values
+            if "-" in str(raw_value):
+                possible_date = parse_date(f"{raw_value}-01")
+                if possible_date:
+                    parsed_int = possible_date.month if lookup.endswith("__month") else possible_date.year
+    if lookup.endswith("__month") and not (1 <= parsed_int <= 12):
+        parsed_int = default_int
+    return parsed_int, str(parsed_int)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def period_sales_statistics(request):
+    """
+    إحصائيات المبيعات لفترة محددة (يوم/شهر/سنة) مع المنتجات الأعلى/الأقل مبيعًا.
+    - دعم فلاتر ديناميكية: created_at__date أو created_at__month أو created_at__year
+    - period_type: day | month | year
+    - period_value: قيمة الفترة (مثال: 2025-01-01 لليوم، أو 1 للشهر، أو 2025 للسنة)
+    - limit: عدد العناصر في top_products/bottom_products
+    """
+    try:
+        now = timezone.now()
+        period_type_param = request.query_params.get("period_type")
+        period_value_param = request.query_params.get("period_value")
+        limit_param = request.query_params.get("limit")
+
+        period_type, period_value, filter_kwargs = _parse_period_filter(
+            now, period_type_param, period_value_param, request
+        )
+
+        try:
+            limit = int(limit_param) if limit_param is not None else 5
+            if limit <= 0:
+                limit = 5
+        except (TypeError, ValueError):
+            limit = 5
+
+        paid_filter = Q(status="PAID") | Q(is_paid=True)
+        orders_qs = Order.objects.filter(paid_filter, **filter_kwargs)
+
+        total_sales = orders_qs.aggregate(total=Sum("total"))["total"] or 0
+
+        items_qs = (
+            OrderItem.objects.filter(order__in=orders_qs)
+            .values("item_id", "item__name")
+            .annotate(
+                total_quantity=Sum("quantity"),
+                order_lines=Count("id"),
+                total_sales=Sum(F("quantity") * F("unit_price")),
+            )
+            .exclude(item_id__isnull=True)
+        )
+
+        top_rows = list(items_qs.order_by("-total_quantity", "item__name")[:limit])
+        bottom_rows = list(items_qs.order_by("total_quantity", "item__name")[:limit])
+
+        def serialize_products(rows):
+            return [
+                {
+                    "product_id": row["item_id"],
+                    "name": row["item__name"],
+                    "total_quantity": row["total_quantity"] or 0,
+                    "order_lines": row["order_lines"],
+                    "total_sales": float(row["total_sales"] or 0),
+                }
+                for row in rows
+            ]
+
+        data = {
+            "period_type": period_type,
+            "period_value": period_value,
+            "total_sales": float(total_sales or 0),
+            "top_products": serialize_products(top_rows),
+            "bottom_products": serialize_products(bottom_rows),
+        }
+
+        return Response(data)
+    except (ProgrammingError, OperationalError) as e:
+        print("Period sales stats DB error:", e)
+        return Response(
+            {
+                "period_type": "day",
+                "period_value": None,
+                "total_sales": 0.0,
+                "top_products": [],
+                "bottom_products": [],
+            }
+        )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def api_accounting(request):

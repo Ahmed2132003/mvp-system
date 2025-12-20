@@ -22,6 +22,14 @@ function formatDateInput(date) {
   return date.toISOString().slice(0, 10);
 }
 
+function formatMonthInput(date) {
+  return date.toISOString().slice(0, 7);
+}
+
+function formatYearInput(date) {
+  return date.getFullYear().toString();
+}
+
 export default function Reports() {
   const today = new Date();
   const thirtyDaysAgo = new Date();
@@ -33,9 +41,19 @@ export default function Reports() {
     groupBy: "day",
   });
 
+  const [periodFilters, setPeriodFilters] = useState({
+    periodType: "day",
+    periodValue: formatDateInput(today),
+    limit: 5,
+  });
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  const [periodStats, setPeriodStats] = useState(null);
+  const [periodLoading, setPeriodLoading] = useState(false);
+  const [periodError, setPeriodError] = useState(null);
 
   // Toast
   const [toast, setToast] = useState({
@@ -76,8 +94,41 @@ export default function Reports() {
     }
   };
 
+  const fetchPeriodStats = async () => {
+    try {
+      setPeriodLoading(true);
+      setPeriodError(null);
+
+      const params = {
+        period_type: periodFilters.periodType,
+        limit: periodFilters.limit,
+      };
+
+      if (periodFilters.periodType === "day") {
+        params.created_at__date = periodFilters.periodValue;
+      } else {
+        params.period_value = periodFilters.periodValue;
+      }
+
+      const res = await api.get("/reports/sales/period-stats/", {
+        params,
+      });
+
+      setPeriodStats(res.data);
+      showToast("تم تحديث إحصائيات الفترة بنجاح.", "success");
+    } catch (err) {
+      console.error("خطأ في تحميل إحصائيات الفترة:", err);
+      const msg = "حدث خطأ أثناء تحميل إحصائيات الفترة. حاول مرة أخرى.";
+      setPeriodError(msg);
+      showToast(msg, "error");
+    } finally {
+      setPeriodLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchReport();
+    fetchPeriodStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -86,15 +137,44 @@ export default function Reports() {
     setFilters((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handlePeriodTypeChange = (e) => {
+    const newType = e.target.value;
+    let nextValue = periodFilters.periodValue;
+
+    if (newType === "day") {
+      nextValue = formatDateInput(today);
+    } else if (newType === "month") {
+      nextValue = formatMonthInput(today);
+    } else {
+      nextValue = formatYearInput(today);
+    }
+
+    setPeriodFilters((prev) => ({
+      ...prev,
+      periodType: newType,
+      periodValue: nextValue,
+    }));
+  };
+
+  const handlePeriodFilterChange = (e) => {
+    const { name, value } = e.target;
+    setPeriodFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleApplyFilters = (e) => {
     e.preventDefault();
     fetchReport();
   };
 
+  const handleApplyPeriodFilters = (e) => {
+    e.preventDefault();
+    fetchPeriodStats();
+  };
+
   const handleExportCsv = () => {
     if (!data || !data.series || data.series.length === 0) {
       showToast("لا توجد بيانات لتصديرها.", "error");
-      return;
+      return;      
     }
 
     const header = ["date", "total_sales", "orders"];
@@ -135,6 +215,14 @@ export default function Reports() {
   const series = data?.series || [];
   const topItems = data?.top_items || [];
   const paymentBreakdown = data?.payment_breakdown || [];
+  const periodData =
+    periodStats || {
+      period_type: periodFilters.periodType,
+      period_value: periodFilters.periodValue,
+      total_sales: 0,
+      top_products: [],
+      bottom_products: [],
+    };
 
   const pieColors = ["#0ea5e9", "#22c55e", "#eab308", "#f97316", "#ef4444"];
 
@@ -205,11 +293,198 @@ export default function Reports() {
           </div>
         </form>
 
+        {/* Period stats filters */}
+        <div className="bg-white shadow rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">
+              إحصائيات الفترة (يوم / شهر / سنة)
+            </h2>
+          </div>
+          <form
+            onSubmit={handleApplyPeriodFilters}
+            className="grid gap-4 md:grid-cols-5"
+          >
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">
+                نوع الفترة
+              </label>
+              <select
+                name="periodType"
+                value={periodFilters.periodType}
+                onChange={handlePeriodTypeChange}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="day">اليوم</option>
+                <option value="month">الشهر</option>
+                <option value="year">السنة</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">
+                قيمة الفترة
+              </label>
+              {periodFilters.periodType === "day" && (
+                <input
+                  type="date"
+                  name="periodValue"
+                  value={periodFilters.periodValue}
+                  onChange={handlePeriodFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+              {periodFilters.periodType === "month" && (
+                <input
+                  type="month"
+                  name="periodValue"
+                  value={periodFilters.periodValue}
+                  onChange={handlePeriodFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+              {periodFilters.periodType === "year" && (
+                <input
+                  type="number"
+                  name="periodValue"
+                  min="2000"
+                  value={periodFilters.periodValue}
+                  onChange={handlePeriodFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">الحد</label>
+              <input
+                type="number"
+                name="limit"
+                min="1"
+                value={periodFilters.limit}
+                onChange={handlePeriodFilterChange}
+                className="border rounded px-2 py-1 text-sm"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                تحديث الإحصائيات
+              </button>
+            </div>
+          </form>
+
+          {periodLoading && (
+            <p className="mt-4 text-gray-600 text-sm">جاري تحميل إحصائيات الفترة...</p>
+          )}
+          {periodError && (
+            <p className="mt-4 text-red-600 text-sm">{periodError}</p>
+          )}
+
+          {!periodLoading && !periodError && (
+            <>
+              <div className="grid gap-4 md:grid-cols-3 mt-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">الفترة</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {periodData.period_type === "day"
+                      ? "اليوم"
+                      : periodData.period_type === "month"
+                        ? "الشهر"
+                        : "السنة"}{" "}
+                    - {periodData.period_value}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">إجمالي المبيعات</p>
+                  <p className="text-lg font-semibold text-gray-800">
+                    {periodData.total_sales?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    جنيه
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">عدد العناصر</p>
+                  <p className="text-lg font-semibold text-gray-800">
+                    {periodFilters.limit} في الأعلى والأسفل
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2 mt-6">
+                <div className="bg-white border rounded-lg p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                    أعلى المنتجات مبيعًا
+                  </h3>
+                  {periodData.top_products.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      لا توجد بيانات كافية لعرض المنتجات الأعلى.
+                    </p>
+                  ) : (
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={periodData.top_products}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar
+                            dataKey="total_quantity"
+                            name="الكمية المباعة"
+                            fill="#0ea5e9"
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white border rounded-lg p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                    أقل المنتجات مبيعًا
+                  </h3>
+                  {periodData.bottom_products.length === 0 ? (
+                    <p className="text-sm text-gray-500">
+                      لا توجد بيانات كافية لعرض المنتجات الأقل.
+                    </p>
+                  ) : (
+                    <div className="overflow-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-right py-2">المنتج</th>
+                            <th className="text-right py-2">الكمية</th>
+                            <th className="text-right py-2">عدد البنود</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {periodData.bottom_products.map((product) => (
+                            <tr key={product.product_id} className="border-b last:border-0">
+                              <td className="py-2">{product.name}</td>
+                              <td className="py-2">{product.total_quantity}</td>
+                              <td className="py-2">{product.order_lines}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
         {/* Loading / Error */}
         {loading && <p className="mb-4 text-gray-600">جاري تحميل التقرير...</p>}
         {error && (
           <p className="mb-4 text-red-600 text-sm">
-            {error}
+            {error}            
           </p>
         )}
 

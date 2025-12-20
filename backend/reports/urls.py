@@ -1,7 +1,5 @@
-# backend/reports/urls.py
 from django.urls import path
-from .views import api_reports, sales_report
-from .views import api_accounting
+from .views import api_accounting, api_reports, period_sales_statistics, sales_report
 
 urlpatterns = [
     # Summary للداشبورد
@@ -10,6 +8,7 @@ urlpatterns = [
 
     # تقرير المبيعات للـ Reports Page
     path('sales/', sales_report, name='sales_report'),
-        path('accounting/', api_accounting, name='api_reports_accounting'),
+    path('sales/period-stats/', period_sales_statistics, name='period_sales_statistics'),
+    path('accounting/', api_accounting, name='api_reports_accounting'),
 
 ]
