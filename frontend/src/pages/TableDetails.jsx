@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import api from "../lib/api";
+import { notifyError, notifySuccess } from "../lib/notifications";
 
 // SidebarNav (same as dashboard)
 function SidebarNav({ lang }) {
@@ -96,45 +97,99 @@ export default function TableDetails() {
   const [reservations, setReservations] = useState([]);
   const [loadingTable, setLoadingTable] = useState(true);
   const [loadingReservations, setLoadingReservations] = useState(true);
+  const [togglingAvailability, setTogglingAvailability] = useState(false);
   const [error, setError] = useState(null);
 
   const hasQr = useMemo(() => !!(table?.qr_code_url || table?.qr_code_base64), [table]);
 
-  useEffect(() => {
+  // ✅ Fix ESLint exhaustive-deps: stable function identity
+  const fetchTable = useCallback(async () => {
     if (!tableId) return;
 
-    const fetchTable = async () => {
-      try {
-        setLoadingTable(true);
-        const res = await api.get(`/orders/tables/${tableId}/`);
-        setTable(res.data);
-        setError(null);
-      } catch (err) {
-        console.error(err);
-        setError(isAr ? "تعذر تحميل بيانات الطاولة." : "Failed to load table details.");
-      } finally {
-        setLoadingTable(false);
-      }
+    try {
+      setLoadingTable(true);
+      const res = await api.get(`/orders/tables/${tableId}/`);
+      setTable(res.data);
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      setTable(null);
+      // خزّن رسالة محايدة، ونترجمها وقت العرض حسب اللغة
+      setError("TABLE_LOAD_FAILED");
+    } finally {
+      setLoadingTable(false);
+    }
+  }, [tableId]);
+
+  const fetchReservations = useCallback(async () => {
+    if (!tableId) return;
+
+    try {
+      setLoadingReservations(true);
+      const res = await api.get("/orders/reservations/", {
+        params: { table: tableId, page_size: 200, ordering: "-reservation_time" },
+      });
+      const results = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setReservations(results);
+    } catch (err) {
+      console.error(err);
+      // ما نكسرش الصفحة لو الحجوزات فشلت
+      setReservations([]);
+    } finally {
+      setLoadingReservations(false);
+    }
+  }, [tableId]);
+
+  useEffect(() => {
+    let alive = true;
+
+    const run = async () => {
+      if (!tableId) return;
+      // شغل الاتنين مع بعض
+      await Promise.all([fetchTable(), fetchReservations()]);
     };
 
-    const fetchReservations = async () => {
-      try {
-        setLoadingReservations(true);
-        const res = await api.get("/orders/reservations/", {
-          params: { table: tableId, page_size: 200, ordering: "-reservation_time" },
-        });
-        const results = Array.isArray(res.data) ? res.data : res.data.results || [];
-        setReservations(results);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoadingReservations(false);
-      }
-    };
+    run();
 
-    fetchTable();
-    fetchReservations();
-  }, [tableId, isAr]);
+    return () => {
+      alive = false;
+      void alive; // بس لتجنب eslint unused لو حصل
+    };
+  }, [tableId, fetchTable, fetchReservations]);
+
+  const toggleAvailability = async () => {
+    if (!table) return;
+    try {
+      setTogglingAvailability(true);
+      const nextValue = !table.is_available;
+
+      await api.patch(`/orders/tables/${table.id}/`, { is_available: nextValue });
+
+      setTable((prev) => (prev ? { ...prev, is_available: nextValue } : prev));
+
+      notifySuccess(
+        nextValue
+          ? isAr
+            ? "تم تعيين الطاولة كمتاحة."
+            : "Table marked available."
+          : isAr
+          ? "تم تعيين الطاولة كغير متاحة."
+          : "Table marked unavailable."
+      );
+    } catch (err) {
+      console.error(err);
+      notifyError(isAr ? "تعذر تحديث حالة الطاولة." : "Failed to update table status.");
+    } finally {
+      setTogglingAvailability(false);
+    }
+  };
+
+  const errorText =
+    error === "TABLE_LOAD_FAILED"
+      ? isAr
+        ? "تعذر تحميل بيانات الطاولة."
+        : "Failed to load table details."
+      : error;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 dark:text-gray-50">
@@ -210,7 +265,13 @@ export default function TableDetails() {
 
               <div>
                 <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-gray-50">
-                  {table ? (isAr ? `تفاصيل الطاولة ${table.number}` : `Table ${table.number} details`) : isAr ? "تفاصيل الطاولة" : "Table details"}
+                  {table
+                    ? isAr
+                      ? `تفاصيل الطاولة ${table.number}`
+                      : `Table ${table.number} details`
+                    : isAr
+                    ? "تفاصيل الطاولة"
+                    : "Table details"}
                 </h2>
                 <p className="text-xs md:text-sm text-gray-500 mt-1 dark:text-gray-400">
                   {isAr ? "عرض بيانات الطاولة والحجوزات المرتبطة بها" : "Table info and related reservations"}
@@ -225,9 +286,7 @@ export default function TableDetails() {
                   type="button"
                   onClick={() => setLanguage("en")}
                   className={`px-2 py-1 ${
-                    !isAr
-                      ? "bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900"
-                      : "text-gray-600 dark:text-gray-300"
+                    !isAr ? "bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900" : "text-gray-600 dark:text-gray-300"
                   }`}
                 >
                   EN
@@ -236,9 +295,7 @@ export default function TableDetails() {
                   type="button"
                   onClick={() => setLanguage("ar")}
                   className={`px-2 py-1 ${
-                    isAr
-                      ? "bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900"
-                      : "text-gray-600 dark:text-gray-300"
+                    isAr ? "bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900" : "text-gray-600 dark:text-gray-300"
                   }`}
                 >
                   AR
@@ -275,16 +332,18 @@ export default function TableDetails() {
           </header>
 
           <div className="px-4 md:px-8 py-6 space-y-4 max-w-7xl mx-auto w-full">
-            {error && (
+            {errorText && (
               <div className="w-full bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-2xl dark:bg-red-900/30 dark:border-red-800 dark:text-red-100">
-                {error}
+                {errorText}
               </div>
             )}
 
             {/* Table info */}
             <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5 dark:bg-slate-900 dark:border-slate-800">
               {loadingTable ? (
-                <p className="text-sm text-gray-500 dark:text-gray-400">{isAr ? "جاري تحميل بيانات الطاولة..." : "Loading table..."}</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {isAr ? "جاري تحميل بيانات الطاولة..." : "Loading table..."}
+                </p>
               ) : !table ? (
                 <p className="text-sm text-gray-500 dark:text-gray-400">{isAr ? "لم يتم العثور على الطاولة." : "Table not found."}</p>
               ) : (
@@ -304,15 +363,44 @@ export default function TableDetails() {
 
                     <div>
                       <p className="text-xs text-gray-500 dark:text-gray-400">{isAr ? "الحالة" : "Status"}</p>
-                      <span
-                        className={
-                          table.is_available
-                            ? "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-100"
-                            : "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-100"
-                        }
-                      >
-                        {table.is_available ? (isAr ? "متاحة" : "Available") : isAr ? "غير متاحة" : "Unavailable"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={
+                            table.is_available
+                              ? "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-100"
+                              : "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-100"
+                          }
+                        >
+                          {table.is_available ? (isAr ? "متاحة" : "Available") : isAr ? "غير متاحة" : "Unavailable"}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={toggleAvailability}
+                          disabled={togglingAvailability}
+                          className="inline-flex items-center gap-1 text-xs px-3 py-1 rounded-xl border border-gray-200 hover:bg-gray-50 disabled:opacity-60 dark:border-slate-700 dark:hover:bg-slate-800"
+                        >
+                          {togglingAvailability ? (
+                            <svg className="animate-spin h-3 w-3 text-gray-500" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8v4l3.536-3.536A8 8 0 114 12z"
+                              />
+                            </svg>
+                          ) : null}
+                          <span>
+                            {table.is_available
+                              ? isAr
+                                ? "تعيين كغير متاحة"
+                                : "Mark unavailable"
+                              : isAr
+                              ? "تعيين كمتاحة"
+                              : "Mark available"}
+                          </span>
+                        </button>
+                      </div>
                     </div>
 
                     <div className="pt-2">
@@ -337,9 +425,7 @@ export default function TableDetails() {
                         />
                       </div>
                     ) : (
-                      <p className="text-xs text-gray-400 dark:text-gray-500">
-                        {isAr ? "لم يتم توليد QR للطاولة بعد." : "QR not generated yet."}
-                      </p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500">{isAr ? "لم يتم توليد QR للطاولة بعد." : "QR not generated yet."}</p>
                     )}
                   </div>
                 </div>

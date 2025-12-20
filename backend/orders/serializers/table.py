@@ -14,7 +14,7 @@ class TableSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Table
-        fields = [
+        fields = [            
             'id',
             'number',
             'capacity',
@@ -29,9 +29,14 @@ class TableSerializer(serializers.ModelSerializer):
 
     def get_qr_code_url(self, obj):
         if obj.qr_code:
-            return settings.SITE_URL + obj.qr_code.url
-        return None
+            qr_url = obj.qr_code.url
+            if qr_url.startswith("http://") or qr_url.startswith("https://"):
+                return qr_url
 
+            base = settings.SITE_URL.rstrip("/")
+            return f"{base}{qr_url}"
+        return None
+    
     def get_available_at_time(self, obj):
         availability_map = self.context.get("availability_map")
         if isinstance(availability_map, dict):
