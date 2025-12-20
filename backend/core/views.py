@@ -68,7 +68,15 @@ def list_stores(request):
         qs = Store.objects.none()
         
     return Response([
-        {"id": s.id, "name": s.name, "address": s.address}
+        {
+            "id": s.id,
+            "name": s.name,
+            "address": s.address,
+            "phone": s.phone,
+            "paymob_keys": s.paymob_keys,
+            "qr_menu_base64": s.qr_menu_base64,
+            "qr_attendance_base64": s.qr_attendance_base64,
+        }
         for s in qs.order_by("id")
     ])
 
