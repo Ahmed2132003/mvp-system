@@ -85,6 +85,13 @@ export default function CustomerMenu() {
   const wsRef = useRef(null);
   const lastAnnouncedStatusRef = useRef(null);
 
+  // الطاولة تعني أن الطلب داخل المكان دائمًا
+  useEffect(() => {
+    if (orderType !== 'IN_STORE') {
+      setOrderType('IN_STORE');
+    }
+  }, [orderType]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const branchParam = params.get('branch');
@@ -102,17 +109,55 @@ export default function CustomerMenu() {
         setLoading(true);
         setError(null);
 
-        const res = await api.get(`/orders/public/table/${tableId}/menu/`, {
-          params: branchId ? { branch_id: branchId } : undefined,
-        });
-        setStore(res.data.store);
-        setTable(res.data.table);
-        setItems(res.data.items || []);
-        setTrendingItems(res.data.trending_items || []);
-        setBranches(res.data.branches || []);
+        const targetBranchId = branchId || selectedBranchId || null;
 
-        if (!selectedBranchId && res.data.branches?.length) {
-          setSelectedBranchId(String(res.data.branches[0].id));
+        // أولًا: بيانات الطاولة للحصول على معلومات المتجر والفرع الحالي
+        const tableRes = await api.get(`/orders/public/table/${tableId}/menu/`, {
+          params: targetBranchId ? { branch_id: targetBranchId } : undefined,
+        });
+
+        setStore(tableRes.data.store);
+        setTable(tableRes.data.table);
+
+        let itemsData = tableRes.data.items || [];
+        let trendingData = tableRes.data.trending_items || [];
+        let mergedBranches = tableRes.data.branches || [];
+        let effectiveBranchId =
+          targetBranchId ||
+          tableRes.data.table?.branch_id ||
+          tableRes.data.table?.branch ||
+          null;
+
+        // اعرض فروع المتجر بنفس الموجودة في منيو المتجر الرئيسية
+        if (tableRes.data.store?.id) {
+          try {
+            const storeMenuRes = await api.get(
+              `/orders/public/store/${tableRes.data.store.id}/menu/`,
+              {
+                params: effectiveBranchId
+                  ? { branch_id: effectiveBranchId }
+                  : undefined,
+              }
+            );
+
+            itemsData = storeMenuRes.data.items || itemsData;
+            trendingData = storeMenuRes.data.trending_items || trendingData;
+            mergedBranches = storeMenuRes.data.branches || mergedBranches;
+          } catch (storeErr) {
+            console.error('خطأ في تحميل منيو المتجر:', storeErr);
+          }
+        }
+
+        if (!effectiveBranchId && mergedBranches?.length) {
+          effectiveBranchId = String(mergedBranches[0].id);
+        }
+
+        setItems(itemsData);
+        setTrendingItems(trendingData);
+        setBranches(mergedBranches || []);
+
+        if (effectiveBranchId && String(effectiveBranchId) !== String(selectedBranchId)) {
+          setSelectedBranchId(String(effectiveBranchId));
         }
       } catch (err) {
         console.error('خطأ في تحميل المينيو:', err);
@@ -127,7 +172,7 @@ export default function CustomerMenu() {
     },
     [tableId, isAr, selectedBranchId]
   );
-
+  
   useEffect(() => {
     if (tableId) {
       fetchMenu(selectedBranchId);
