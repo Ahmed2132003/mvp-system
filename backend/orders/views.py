@@ -11,7 +11,7 @@ from rest_framework.exceptions import ValidationError
 
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.shortcuts import get_object_or_404
@@ -136,12 +136,18 @@ class TableViewSet(viewsets.ModelViewSet):
         if not store:
             return Table.objects.none()
 
+        active_reservations = Prefetch(
+            "reservations",
+            queryset=Reservation.objects.filter(status__in=["PENDING", "CONFIRMED"]),
+            to_attr="active_reservations",
+        )
+
         branch = get_branch_from_request(self.request, store=store, allow_store_default=False)
-        qs = Table.objects.filter(store=store)
+        qs = Table.objects.filter(store=store).prefetch_related(active_reservations)
         if branch:
             qs = qs.filter(Q(branch=branch) | Q(branch__isnull=True))
         return qs.order_by("number")
-
+    
     def perform_create(self, serializer):
         """
         ✅ حل نهائي لمشكلة:

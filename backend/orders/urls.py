@@ -16,12 +16,9 @@ from .views import (
 
 router = DefaultRouter()
 
-# ✅ خلي OrderViewSet على root "/api/v1/orders/" زي ما أنت عايز
-router.register(r"", OrderViewSet, basename="order")
-
-# ✅ ViewSets تانية
 router.register(r"tables", TableViewSet, basename="table")
 router.register(r"reservations", ReservationViewSet, basename="reservation")
+router.register(r"", OrderViewSet, basename="order")
 
 urlpatterns = [
     # ✅ أولاً: public endpoints (عشان مافيش أي احتمالات routing غريبة)
