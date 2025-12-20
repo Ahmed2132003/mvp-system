@@ -12,33 +12,90 @@ const api = axios.create({
 // -----------------------------
 // Token Helpers (Compatibility)
 // -----------------------------
-const getAccessToken = () =>
+export const getAccessToken = () =>
   localStorage.getItem('access_token') ||
   localStorage.getItem('access') ||
   localStorage.getItem('token') ||
   null;
 
-const getRefreshToken = () =>
+export const getRefreshToken = () =>
   localStorage.getItem('refresh_token') ||
   localStorage.getItem('refresh') ||
   null;
 
-const setAccessToken = (token) => {
+export const setAccessToken = (token) => {
   if (!token) return;
   localStorage.setItem('access_token', token);
   localStorage.setItem('access', token); // دعم قديم
 };
 
-const setRefreshToken = (token) => {
+export const setRefreshToken = (token) => {
   if (!token) return;
   localStorage.setItem('refresh_token', token);
   localStorage.setItem('refresh', token); // دعم قديم
 };
 
 // -----------------------------
+// Token expiry helpers
+// -----------------------------
+const decodeJwtPayload = (token) => {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = atob(normalized);
+    return JSON.parse(decoded);
+  } catch (error) {
+    console.warn('Unable to decode JWT payload', error);
+    return null;
+  }
+};
+
+export const isTokenExpired = (token) => {
+  const payload = decodeJwtPayload(token);
+  if (!payload?.exp) return false;
+  const expiryMs = payload.exp * 1000;
+  return Date.now() >= expiryMs;
+};
+
+export const refreshAccessToken = async (refreshToken) => {
+  if (!refreshToken) return null;
+
+  try {
+    let res;
+
+    try {
+      res = await axios.post(`${BASE_URL}/auth/refresh/`, {
+        refresh: refreshToken,
+      });
+    } catch {
+      res = await axios.post(`${BASE_URL}/auth/token/refresh/`, {
+        refresh: refreshToken,
+      });
+    }
+
+    const { access, refresh } = res.data || {};
+
+    if (access) {
+      setAccessToken(access);
+      api.defaults.headers.common.Authorization = `Bearer ${access}`;
+    }
+
+    if (refresh) {
+      setRefreshToken(refresh);
+    }
+
+    return { access, refresh };
+  } catch (error) {
+    console.error('refreshAccessToken failed', error);
+    throw error;
+  }
+};
+
+// -----------------------------
 // Request Interceptor
 // -----------------------------
-api.interceptors.request.use(
+api.interceptors.request.use(  
   (config) => {
     // ✅ Authorization
     const token = getAccessToken();

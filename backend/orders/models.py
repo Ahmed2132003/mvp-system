@@ -84,7 +84,7 @@ class Table(models.Model):
             
             qr = qrcode.QRCode(version=1, box_size=10, border=4)
             qr.add_data(table_url)
-            qr.make(fit=True)
+            qr.make(fit=True)            
             img = qr.make_image(fill_color="black", back_color="white")
 
             buffer = BytesIO()
@@ -99,7 +99,17 @@ class Table(models.Model):
             Table.objects.filter(pk=self.pk).update(
                 qr_code=self.qr_code,
                 qr_code_base64=self.qr_code_base64
-            )        
+            )
+        elif self.qr_code and not self.qr_code_base64:
+            try:
+                self.qr_code.file.seek(0)
+                encoded = base64.b64encode(self.qr_code.file.read()).decode("utf-8")
+                self.qr_code_base64 = encoded
+                Table.objects.filter(pk=self.pk).update(qr_code_base64=encoded)
+            except Exception:
+                # لو الملف مش موجود لأي سبب، نتجاهل بدون ما نكسر الحفظ
+                pass        
+                             
 class OrderQuerySet(models.QuerySet):
     def pending(self):
         return self.filter(status='PENDING')

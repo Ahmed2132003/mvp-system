@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.conf import settings
+import base64
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -44,21 +45,18 @@ class TableSerializer(serializers.ModelSerializer):
         return None
 
     def to_representation(self, obj):
+        """
+        نعيد الحقول كما هي مع ضمان وجود base64 للـ QR لو الملف متاح.
+        بدون أي تعديل على is_available حتى لا نكسر اختيار المستخدم.
+        """
         data = super().to_representation(obj)
-        if self._has_active_reservation(obj):
-            data["is_available"] = False
+
+        if not data.get("qr_code_base64") and getattr(obj, "qr_code", None):
+            try:
+                obj.qr_code.file.seek(0)
+                encoded = base64.b64encode(obj.qr_code.file.read()).decode("utf-8")
+                data["qr_code_base64"] = encoded
+            except Exception:
+                pass
+
         return data
-
-    def _has_active_reservation(self, obj):
-        """Keep table unavailable while an active reservation window is ongoing."""
-        now = timezone.now()
-        reservations = getattr(obj, "active_reservations", None)
-        if reservations is None:
-            reservations = obj.reservations.filter(status__in=["PENDING", "CONFIRMED"])
-
-        for reservation in reservations:
-            duration_minutes = reservation.duration or 60
-            end_time = reservation.reservation_time + timedelta(minutes=duration_minutes)
-            if reservation.reservation_time <= now < end_time:
-                return True
-        return False
