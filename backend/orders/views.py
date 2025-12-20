@@ -307,15 +307,21 @@ def _build_availability_map(qs, reservation_time=None, duration=60):
     if not reservation_time:
         return {}
 
+    if isinstance(qs, (list, tuple)):
+        qs_list = list(qs)
+        base_qs = Table.objects.filter(id__in=[table.id for table in qs_list if getattr(table, "id", None)])
+    else:
+        qs_list = list(qs)
+        base_qs = qs
+
     try:
         duration_val = int(duration)
     except (TypeError, ValueError):
         duration_val = 60
 
-    available_qs = Table.objects.available_at_time(reservation_time, duration_val)
+    available_qs = base_qs.available_at_time(reservation_time, duration_val)
     available_ids = set(available_qs.values_list("id", flat=True))
-    return {table.id: table.id in available_ids for table in qs}
-
+    return {table.id: table.id in available_ids for table in qs_list}
 
 class PublicTableMenuView(APIView):
     """
@@ -464,18 +470,42 @@ class PublicStoreTablesView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, store_id):
-        store = get_object_or_404(Store, pk=store_id)
+        store = Store.objects.filter(pk=store_id).first()
+        if not store:
+            return Response(
+                {"detail": "المتجر غير متاح حالياً."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         branch_id = request.query_params.get("branch_id") or request.query_params.get("branch")
-        branch = select_branch_for_store(store, branch_id)
+        branches_qs = store.branches.filter(is_active=True)
+        branch = None
+        if branch_id:
+            try:
+                branch = branches_qs.get(pk=int(branch_id))
+            except (ValueError, Branch.DoesNotExist):
+                return Response(
+                    {"detail": "الفرع المطلوب غير موجود أو غير مفعل."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        else:
+            branch = select_branch_for_store(store, branch_id)
+
+        try:
+            party_size = int(request.query_params.get("party_size", 1))
+        except (TypeError, ValueError):
+            party_size = 1
 
         qs = Table.objects.at_store(store).filter(is_active=True)
         if branch:
             qs = qs.at_branch(branch)
+        if party_size and party_size > 0:
+            qs = qs.for_capacity(party_size)
 
         res_time_param = request.query_params.get("time")
         duration = request.query_params.get("duration", 60)
         availability_map = {}
-        if res_time_param:
+        if res_time_param:            
             res_time = ensure_aware(parse_datetime(res_time_param))
             if not res_time:
                 return Response({"detail": "صيغة الوقت غير صحيحة."}, status=status.HTTP_400_BAD_REQUEST)
