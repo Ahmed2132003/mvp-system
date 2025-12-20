@@ -471,31 +471,20 @@ class PublicStoreTablesView(APIView):
 
     def get(self, request, store_id):
         store = Store.objects.filter(pk=store_id).first()
-        if not store:
+        if not store:            
             return Response(
                 {"detail": "المتجر غير متاح حالياً."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         branch_id = request.query_params.get("branch_id") or request.query_params.get("branch")
-        branches_qs = store.branches.filter(is_active=True)
-        branch = None
-        if branch_id:
-            try:
-                branch = branches_qs.get(pk=int(branch_id))
-            except (ValueError, Branch.DoesNotExist):
-                return Response(
-                    {"detail": "الفرع المطلوب غير موجود أو غير مفعل."},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-        else:
-            branch = select_branch_for_store(store, branch_id)
+        branch = select_branch_for_store(store, branch_id)
 
         try:
             party_size = int(request.query_params.get("party_size", 1))
         except (TypeError, ValueError):
             party_size = 1
-
+            
         qs = Table.objects.at_store(store).filter(is_active=True)
         if branch:
             qs = qs.at_branch(branch)

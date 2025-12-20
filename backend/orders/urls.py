@@ -1,5 +1,5 @@
 # backend/orders/urls.py
-from django.urls import path
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views import (
@@ -8,52 +8,55 @@ from .views import (
     ReservationViewSet,
     PublicTableMenuView,
     PublicTableOrderCreateView,
-    PublicStoreMenuView,          # ✅ جديد
-    PublicStoreOrderCreateView,   # ✅ جديد
+    PublicStoreMenuView,
+    PublicStoreOrderCreateView,
     PublicStoreTablesView,
     PublicReservationCreateView,
 )
 
 router = DefaultRouter()
-# /api/v1/orders/        -> OrderViewSet (list, create, ...)
-router.register(r'tables', TableViewSet, basename='table')
-router.register(r'reservations', ReservationViewSet, basename='reservation')
-router.register(r'', OrderViewSet, basename='order')
+
+# ✅ خلي OrderViewSet على root "/api/v1/orders/" زي ما أنت عايز
+router.register(r"", OrderViewSet, basename="order")
+
+# ✅ ViewSets تانية
+router.register(r"tables", TableViewSet, basename="table")
+router.register(r"reservations", ReservationViewSet, basename="reservation")
 
 urlpatterns = [
-    # ✅ QR Menu per Table
+    # ✅ أولاً: public endpoints (عشان مافيش أي احتمالات routing غريبة)
     path(
-        'public/table/<int:table_id>/menu/',
+        "public/table/<int:table_id>/menu/",
         PublicTableMenuView.as_view(),
-        name='public-table-menu',
+        name="public-table-menu",
     ),
     path(
-        'public/table/<int:table_id>/order/',
+        "public/table/<int:table_id>/order/",
         PublicTableOrderCreateView.as_view(),
-        name='public-table-order',
+        name="public-table-order",
     ),
 
-    # ✅ QR Menu per Store (المنيو العام)
     path(
-        'public/store/<int:store_id>/menu/',
+        "public/store/<int:store_id>/menu/",
         PublicStoreMenuView.as_view(),
-        name='public-store-menu',
+        name="public-store-menu",
     ),
     path(
-        'public/store/<int:store_id>/tables/',
+        "public/store/<int:store_id>/tables/",
         PublicStoreTablesView.as_view(),
-        name='public-store-tables',
+        name="public-store-tables",
     ),
     path(
-        'public/store/<int:store_id>/reservation/',
+        "public/store/<int:store_id>/reservation/",
         PublicReservationCreateView.as_view(),
-        name='public-store-reservation',
+        name="public-store-reservation",
     ),
     path(
-        'public/store/<int:store_id>/order/',
+        "public/store/<int:store_id>/order/",
         PublicStoreOrderCreateView.as_view(),
-        name='public-store-order',
-    ),    
-]
+        name="public-store-order",
+    ),
 
-urlpatterns += router.urls
+    # ✅ أخيراً: router endpoints
+    path("", include(router.urls)),
+]
