@@ -102,6 +102,34 @@ export default function TableDetails() {
 
   const hasQr = useMemo(() => !!(table?.qr_code_url || table?.qr_code_base64), [table]);
 
+  // ✅ NEW: robust QR src (absolute/relative/base64)
+  const qrSrc = useMemo(() => {
+    if (!table) return null;
+
+    const url = table.qr_code_url;
+    if (url) {
+      // absolute
+      if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://"))) {
+        return url;
+      }
+
+      // relative "/media/..."
+      if (typeof url === "string" && url.startsWith("/")) {
+        const base = (api?.defaults?.baseURL || "").replace(/\/$/, "");
+        if (base) return `${base}${url}`;
+        return url;
+      }
+
+      return url;
+    }
+
+    if (table.qr_code_base64) {
+      return `data:image/png;base64,${table.qr_code_base64}`;
+    }
+
+    return null;
+  }, [table]);
+
   // ✅ Fix ESLint exhaustive-deps: stable function identity
   const fetchTable = useCallback(async () => {
     if (!tableId) return;
@@ -114,7 +142,6 @@ export default function TableDetails() {
     } catch (err) {
       console.error(err);
       setTable(null);
-      // خزّن رسالة محايدة، ونترجمها وقت العرض حسب اللغة
       setError("TABLE_LOAD_FAILED");
     } finally {
       setLoadingTable(false);
@@ -133,7 +160,6 @@ export default function TableDetails() {
       setReservations(results);
     } catch (err) {
       console.error(err);
-      // ما نكسرش الصفحة لو الحجوزات فشلت
       setReservations([]);
     } finally {
       setLoadingReservations(false);
@@ -145,7 +171,6 @@ export default function TableDetails() {
 
     const run = async () => {
       if (!tableId) return;
-      // شغل الاتنين مع بعض
       await Promise.all([fetchTable(), fetchReservations()]);
     };
 
@@ -153,7 +178,7 @@ export default function TableDetails() {
 
     return () => {
       alive = false;
-      void alive; // بس لتجنب eslint unused لو حصل
+      void alive;
     };
   }, [tableId, fetchTable, fetchReservations]);
 
@@ -416,12 +441,19 @@ export default function TableDetails() {
                   {/* QR */}
                   <div className="flex flex-col items-center justify-center">
                     <p className="text-xs text-gray-500 mb-2 dark:text-gray-400">{isAr ? "QR كود للطاولة" : "Table QR code"}</p>
-                    {hasQr ? (
+
+                    {hasQr && qrSrc ? (
                       <div className="border rounded-2xl p-3 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
                         <img
-                          src={table.qr_code_url ? table.qr_code_url : `data:image/png;base64,${table.qr_code_base64}`}
+                          src={qrSrc}
                           alt="QR Code"
                           className="w-40 h-40 object-contain"
+                          onError={(e) => {
+                            // لو الـ URL فشل وعايز تعتمد على base64 كحل أخير
+                            if (table?.qr_code_base64) {
+                              e.currentTarget.src = `data:image/png;base64,${table.qr_code_base64}`;
+                            }
+                          }}
                         />
                       </div>
                     ) : (
