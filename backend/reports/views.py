@@ -1,4 +1,5 @@
 # backend/reports/views.py
+from calendar import monthrange
 from datetime import date, timedelta
 
 from django.db.models import Sum, F, Count, Q
@@ -348,7 +349,222 @@ def _parse_lookup_value(lookup, raw_value, now):
         parsed_int = default_int
     return parsed_int, str(parsed_int)
 
+def _preset_period_range(today, preset_key):
+    current_week_start = today - timedelta(days=today.weekday())
+    current_month_start = today.replace(day=1)
 
+    if preset_key == "today":
+        return today, today
+    if preset_key == "yesterday":
+        yesterday = today - timedelta(days=1)
+        return yesterday, yesterday
+    if preset_key == "current_week":
+        return current_week_start, current_week_start + timedelta(days=6)
+    if preset_key == "previous_week":
+        previous_week_end = current_week_start - timedelta(days=1)
+        previous_week_start = previous_week_end - timedelta(days=6)
+        return previous_week_start, previous_week_end
+    if preset_key == "current_month":
+        days_in_month = monthrange(today.year, today.month)[1]
+        return current_month_start, current_month_start.replace(day=days_in_month)
+    if preset_key == "previous_month":
+        prev_month = today.month - 1 or 12
+        prev_year = today.year if today.month > 1 else today.year - 1
+        prev_month_start = date(prev_year, prev_month, 1)
+        prev_days = monthrange(prev_year, prev_month)[1]
+        return prev_month_start, prev_month_start.replace(day=prev_days)
+
+    # Default: fallback to today
+    return today, today
+
+
+def _resolve_period(request, prefix, now):
+    preset_key = (request.query_params.get(f"{prefix}_preset") or "").lower()
+    start_param = request.query_params.get(f"{prefix}_start")
+    end_param = request.query_params.get(f"{prefix}_end")
+
+    today = now.date()
+
+    if preset_key:
+        start_date, end_date = _preset_period_range(today, preset_key)
+        label = preset_key
+    else:
+        start_date = parse_date(start_param) or today
+        end_date = parse_date(end_param) or start_date
+        label = "custom"
+
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    return label, start_date, end_date
+
+
+def _serialize_products(rows):
+    return [
+        {
+            "product_id": row["item_id"],
+            "name": row["item__name"],
+            "total_quantity": row["total_quantity"] or 0,
+            "order_lines": row["order_lines"],
+            "total_sales": float(row["total_sales"] or 0),
+        }
+        for row in rows
+    ]
+
+
+def _period_metrics(orders_qs, limit):
+    total_sales = orders_qs.aggregate(total=Sum("total"))['total'] or 0
+    orders_count = orders_qs.count()
+    avg_order_value = (total_sales / orders_count) if orders_count else 0
+
+    items_qs = (
+        OrderItem.objects.filter(order__in=orders_qs)
+        .values("item_id", "item__name")
+        .annotate(
+            total_quantity=Sum("quantity"),
+            order_lines=Count("id"),
+            total_sales=Sum(F("quantity") * F("unit_price")),
+        )
+        .exclude(item_id__isnull=True)
+    )
+
+    top_rows = list(items_qs.order_by("-total_quantity", "item__name")[:limit])
+    bottom_rows = list(items_qs.order_by("total_quantity", "item__name")[:limit])
+
+    return {
+        "total_sales": float(total_sales or 0),
+        "total_orders": orders_count,
+        "avg_order_value": round(float(avg_order_value or 0), 2),
+        "top_products": _serialize_products(top_rows),
+        "bottom_products": _serialize_products(bottom_rows),
+    }
+
+
+def _delta(current, previous):
+    absolute = float(current) - float(previous)
+    if previous == 0:
+        percentage = None if absolute != 0 else 0.0
+    else:
+        percentage = round((absolute / float(previous)) * 100, 2)
+
+    return {
+        "absolute": round(absolute, 2),
+        "percentage": percentage,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def compare_sales_periods(request):
+    """
+    مقارنة فترتين زمنيتين (مخصصة أو Preset) مع حساب الفروق.
+    - period_a_preset / period_b_preset: today | yesterday | current_week | previous_week | current_month | previous_month
+    - أو period_a_start / period_a_end (و نفس الشيء لـ period_b_*)
+    - limit: عدد المنتجات الأعلى/الأقل مبيعًا في كل فترة
+    """
+    try:
+        now = timezone.now()
+        limit_param = request.query_params.get("limit")
+        try:
+            limit = int(limit_param) if limit_param is not None else 5
+            if limit <= 0:
+                limit = 5
+        except (TypeError, ValueError):
+            limit = 5
+
+        label_a, start_a, end_a = _resolve_period(request, "period_a", now)
+        label_b, start_b, end_b = _resolve_period(request, "period_b", now)
+
+        paid_filter = Q(status="PAID") | Q(is_paid=True)
+        qs = Order.objects.filter(paid_filter)
+
+        user = request.user
+        role = getattr(user, "role", None)
+        employee = getattr(user, "employee", None)
+
+        if employee and getattr(employee, "store_id", None):
+            qs = qs.filter(store=employee.store)
+        elif hasattr(user, "owned_stores") and user.owned_stores.exists():
+            qs = qs.filter(store_id__in=user.owned_stores.values_list("id", flat=True))
+        elif role == "OWNER" or role is None or getattr(user, "is_superuser", False):
+            pass
+        else:
+            qs = qs.none()
+
+        store_id = request.query_params.get("store_id")
+        branch_id = request.query_params.get("branch")
+        if store_id:
+            qs = qs.filter(store_id=store_id)
+        if branch_id:
+            qs = qs.filter(branch_id=branch_id)
+
+        period_a_qs = qs.filter(
+            created_at__date__gte=start_a,
+            created_at__date__lte=end_a,
+        )
+        period_b_qs = qs.filter(
+            created_at__date__gte=start_b,
+            created_at__date__lte=end_b,
+        )
+
+        period_a_metrics = _period_metrics(period_a_qs, limit)
+        period_b_metrics = _period_metrics(period_b_qs, limit)
+
+        deltas = {
+            "total_sales": _delta(period_a_metrics["total_sales"], period_b_metrics["total_sales"]),
+            "total_orders": _delta(period_a_metrics["total_orders"], period_b_metrics["total_orders"]),
+            "avg_order_value": _delta(period_a_metrics["avg_order_value"], period_b_metrics["avg_order_value"]),
+        }
+
+        response_data = {
+            "period_a": {
+                "label": label_a,
+                "start": start_a.isoformat(),
+                "end": end_a.isoformat(),
+                **period_a_metrics,
+            },
+            "period_b": {
+                "label": label_b,
+                "start": start_b.isoformat(),
+                "end": end_b.isoformat(),
+                **period_b_metrics,
+            },
+            "deltas": deltas,
+        }
+
+        return Response(response_data)
+    except (ProgrammingError, OperationalError) as e:
+        print("Compare sales DB error:", e)
+        return Response(
+            {
+                "period_a": {
+                    "label": "custom",
+                    "start": None,
+                    "end": None,
+                    "total_sales": 0.0,
+                    "total_orders": 0,
+                    "avg_order_value": 0.0,
+                    "top_products": [],
+                    "bottom_products": [],
+                },
+                "period_b": {
+                    "label": "custom",
+                    "start": None,
+                    "end": None,
+                    "total_sales": 0.0,
+                    "total_orders": 0,
+                    "avg_order_value": 0.0,
+                    "top_products": [],
+                    "bottom_products": [],
+                },
+                "deltas": {
+                    "total_sales": {"absolute": 0.0, "percentage": None},
+                    "total_orders": {"absolute": 0.0, "percentage": None},
+                    "avg_order_value": {"absolute": 0.0, "percentage": None},
+                },
+            }
+        )
+        
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def period_sales_statistics(request):

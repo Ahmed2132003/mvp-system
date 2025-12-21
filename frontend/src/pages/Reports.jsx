@@ -47,6 +47,16 @@ export default function Reports() {
     limit: 5,
   });
 
+  const [compareFilters, setCompareFilters] = useState({
+    periodAPreset: "current_week",
+    periodAStart: formatDateInput(thirtyDaysAgo),
+    periodAEnd: formatDateInput(today),
+    periodBPreset: "previous_week",
+    periodBStart: formatDateInput(thirtyDaysAgo),
+    periodBEnd: formatDateInput(today),
+    limit: 5,
+  });
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -54,6 +64,10 @@ export default function Reports() {
   const [periodStats, setPeriodStats] = useState(null);
   const [periodLoading, setPeriodLoading] = useState(false);
   const [periodError, setPeriodError] = useState(null);
+
+  const [comparison, setComparison] = useState(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareError, setCompareError] = useState(null);
 
   // Toast
   const [toast, setToast] = useState({
@@ -126,9 +140,54 @@ export default function Reports() {
     }
   };
 
+  const buildPeriodParams = (prefix, preset, start, end) => {
+    if (preset === "custom") {
+      return {
+        [`${prefix}_start`]: start,
+        [`${prefix}_end`]: end,
+      };
+    }
+    return { [`${prefix}_preset`]: preset };
+  };
+
+  const fetchComparison = async () => {
+    try {
+      setCompareLoading(true);
+      setCompareError(null);
+
+      const params = {
+        limit: compareFilters.limit,
+        ...buildPeriodParams(
+          "period_a",
+          compareFilters.periodAPreset,
+          compareFilters.periodAStart,
+          compareFilters.periodAEnd
+        ),
+        ...buildPeriodParams(
+          "period_b",
+          compareFilters.periodBPreset,
+          compareFilters.periodBStart,
+          compareFilters.periodBEnd
+        ),
+      };
+
+      const res = await api.get("/reports/sales/compare/", { params });
+      setComparison(res.data);
+      showToast("تم تحديث مقارنة الفترات بنجاح.", "success");
+    } catch (err) {
+      console.error("خطأ في تحميل مقارنة الفترات:", err);
+      const msg = "حدث خطأ أثناء تحميل مقارنة الفترات. حاول مرة أخرى.";
+      setCompareError(msg);
+      showToast(msg, "error");
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchReport();
     fetchPeriodStats();
+    fetchComparison();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -161,14 +220,39 @@ export default function Reports() {
     setPeriodFilters((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleComparePresetChange = (name, value) => {
+    setCompareFilters((prev) => {
+      const prefix = name === "periodAPreset" ? "periodA" : "periodB";
+      const next = { ...prev, [name]: value };
+
+      if (value === "custom") {
+        next[`${prefix}Start`] =
+          prev[`${prefix}Start`] || formatDateInput(thirtyDaysAgo);
+        next[`${prefix}End`] = prev[`${prefix}End`] || formatDateInput(today);
+      }
+      return next;
+    });
+  };
+
+  const handleCompareInputChange = (e) => {
+    const { name, value } = e.target;
+    setCompareFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleApplyFilters = (e) => {
     e.preventDefault();
     fetchReport();
   };
 
+
   const handleApplyPeriodFilters = (e) => {
     e.preventDefault();
     fetchPeriodStats();
+  };
+
+  const handleApplyComparison = (e) => {
+    e.preventDefault();
+    fetchComparison();
   };
 
   const handleExportCsv = () => {
@@ -211,18 +295,94 @@ export default function Reports() {
     total_orders: 0,
     avg_ticket: 0,
   };
-
   const series = data?.series || [];
   const topItems = data?.top_items || [];
   const paymentBreakdown = data?.payment_breakdown || [];
   const periodData =
-    periodStats || {
+    periodStats || {      
       period_type: periodFilters.periodType,
       period_value: periodFilters.periodValue,
       total_sales: 0,
       top_products: [],
       bottom_products: [],
     };
+  const comparisonData =
+    comparison || {
+      period_a: {
+        label: "current_week",
+        start: filters.from,
+        end: filters.to,
+        total_sales: 0,
+        total_orders: 0,
+        avg_order_value: 0,
+        top_products: [],
+        bottom_products: [],
+      },
+      period_b: {
+        label: "previous_week",
+        start: filters.from,
+        end: filters.to,
+        total_sales: 0,
+        total_orders: 0,
+        avg_order_value: 0,
+        top_products: [],
+        bottom_products: [],
+      },
+      deltas: {
+        total_sales: { absolute: 0, percentage: null },
+        total_orders: { absolute: 0, percentage: null },
+        avg_order_value: { absolute: 0, percentage: null },
+      },
+    };
+  const comparisonChartData = [
+    {
+      name: "إجمالي المبيعات",
+      period_a: comparisonData.period_a.total_sales || 0,
+      period_b: comparisonData.period_b.total_sales || 0,
+    },
+    {
+      name: "عدد الطلبات",
+      period_a: comparisonData.period_a.total_orders || 0,
+      period_b: comparisonData.period_b.total_orders || 0,
+    },
+    {
+      name: "متوسط قيمة الطلب",
+      period_a: comparisonData.period_a.avg_order_value || 0,
+      period_b: comparisonData.period_b.avg_order_value || 0,
+    },
+  ];
+  const deltaRows = [
+    { key: "total_sales", label: "إجمالي المبيعات" },
+    { key: "total_orders", label: "عدد الطلبات" },
+    { key: "avg_order_value", label: "متوسط قيمة الطلب" },
+  ];
+
+  const renderProductTable = (products) =>
+    products.length === 0 ? (
+      <p className="text-sm text-gray-500">لا توجد بيانات كافية.</p>
+    ) : (
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b">
+            <th className="text-right py-2">المنتج</th>
+            <th className="text-right py-2">الكمية</th>
+            <th className="text-right py-2">عدد البنود</th>
+          </tr>
+        </thead>
+        <tbody>
+          {products.map((product) => (
+            <tr
+              key={`${product.product_id}-${product.name}`}
+              className="border-b last:border-0"
+            >
+              <td className="py-2">{product.name}</td>
+              <td className="py-2">{product.total_quantity}</td>
+              <td className="py-2">{product.order_lines}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
 
   const pieColors = ["#0ea5e9", "#22c55e", "#eab308", "#f97316", "#ef4444"];
 
@@ -480,11 +640,330 @@ export default function Reports() {
           )}
         </div>
 
+        {/* Compare two periods */}
+        <div className="bg-white shadow rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">مقارنة فترتين</h2>
+          </div>
+
+          <form
+            onSubmit={handleApplyComparison}
+            className="grid gap-4 lg:grid-cols-3"
+          >
+            <div className="flex flex-col gap-2 border rounded-lg p-3">
+              <p className="text-xs font-semibold text-gray-600">الفترة A</p>
+              <select
+                name="periodAPreset"
+                value={compareFilters.periodAPreset}
+                onChange={(e) => handleComparePresetChange("periodAPreset", e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="today">اليوم</option>
+                <option value="yesterday">أمس</option>
+                <option value="current_week">الأسبوع الحالي</option>
+                <option value="previous_week">الأسبوع السابق</option>
+                <option value="current_month">الشهر الحالي</option>
+                <option value="previous_month">الشهر السابق</option>
+                <option value="custom">مخصص</option>
+              </select>
+              {compareFilters.periodAPreset === "custom" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-600">من</label>
+                    <input
+                      type="date"
+                      name="periodAStart"
+                      value={compareFilters.periodAStart}
+                      onChange={handleCompareInputChange}
+                      className="border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-600">إلى</label>
+                    <input
+                      type="date"
+                      name="periodAEnd"
+                      value={compareFilters.periodAEnd}
+                      onChange={handleCompareInputChange}
+                      className="border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2 border rounded-lg p-3">
+              <p className="text-xs font-semibold text-gray-600">الفترة B</p>
+              <select
+                name="periodBPreset"
+                value={compareFilters.periodBPreset}
+                onChange={(e) => handleComparePresetChange("periodBPreset", e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="today">اليوم</option>
+                <option value="yesterday">أمس</option>
+                <option value="current_week">الأسبوع الحالي</option>
+                <option value="previous_week">الأسبوع السابق</option>
+                <option value="current_month">الشهر الحالي</option>
+                <option value="previous_month">الشهر السابق</option>
+                <option value="custom">مخصص</option>
+              </select>
+              {compareFilters.periodBPreset === "custom" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-600">من</label>
+                    <input
+                      type="date"
+                      name="periodBStart"
+                      value={compareFilters.periodBStart}
+                      onChange={handleCompareInputChange}
+                      className="border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-600">إلى</label>
+                    <input
+                      type="date"
+                      name="periodBEnd"
+                      value={compareFilters.periodBEnd}
+                      onChange={handleCompareInputChange}
+                      className="border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col justify-between gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-sm font-medium text-gray-700">
+                  حد المنتجات
+                </label>
+                <input
+                  type="number"
+                  name="limit"
+                  min="1"
+                  value={compareFilters.limit}
+                  onChange={handleCompareInputChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 self-start"
+              >
+                تحديث المقارنة
+              </button>
+            </div>
+          </form>
+
+          {compareLoading && (
+            <p className="mt-4 text-gray-600 text-sm">
+              جاري تحميل بيانات المقارنة...
+            </p>
+          )}
+          {compareError && (
+            <p className="mt-4 text-red-600 text-sm">{compareError}</p>
+          )}
+
+          {!compareLoading && !compareError && (
+            <>
+              <div className="grid gap-4 md:grid-cols-2 mt-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">الفترة A</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {comparisonData.period_a.label} ({comparisonData.period_a.start} →{" "}
+                    {comparisonData.period_a.end})
+                  </p>
+                  <p className="text-lg font-semibold text-gray-900 mt-2">
+                    {comparisonData.period_a.total_sales?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    جنيه
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    الطلبات: {comparisonData.period_a.total_orders} | متوسط الطلب:{" "}
+                    {comparisonData.period_a.avg_order_value?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    جنيه
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">الفترة B</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {comparisonData.period_b.label} ({comparisonData.period_b.start} →{" "}
+                    {comparisonData.period_b.end})
+                  </p>
+                  <p className="text-lg font-semibold text-gray-900 mt-2">
+                    {comparisonData.period_b.total_sales?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    جنيه
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    الطلبات: {comparisonData.period_b.total_orders} | متوسط الطلب:{" "}
+                    {comparisonData.period_b.avg_order_value?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    جنيه
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3 mt-4">
+                {deltaRows.map((row) => {
+                  const delta = comparisonData.deltas[row.key] || {};
+                  const pct = delta.percentage;
+                  return (
+                    <div key={row.key} className="bg-white border rounded-lg p-4 shadow-sm">
+                      <p className="text-xs text-gray-500 mb-1">{row.label}</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {delta.absolute?.toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        {row.key === "total_orders" ? "طلب" : "جنيه"}
+                      </p>
+                      <p
+                        className={`text-xs mt-1 ${
+                          pct > 0 ? "text-emerald-600" : pct < 0 ? "text-red-600" : "text-gray-600"
+                        }`}
+                      >
+                        {pct === null
+                          ? "لا يمكن حساب النسبة (لا توجد بيانات للفترة B)"
+                          : `${pct?.toLocaleString("en-US", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 2,
+                            })}%`}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2 mt-6">
+                <div className="bg-white border rounded-lg p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                    مقارنة المؤشرات الرئيسية
+                  </h3>
+                  <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={comparisonChartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Bar
+                          dataKey="period_a"
+                          name={`الفترة A (${comparisonData.period_a.label})`}
+                          fill="#0ea5e9"
+                        />
+                        <Bar
+                          dataKey="period_b"
+                          name={`الفترة B (${comparisonData.period_b.label})`}
+                          fill="#22c55e"
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="bg-white border rounded-lg p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                    قائمة الفروقات
+                  </h3>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-right py-2">المؤشر</th>
+                        <th className="text-right py-2">الفترة A</th>
+                        <th className="text-right py-2">الفترة B</th>
+                        <th className="text-right py-2">الفارق</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deltaRows.map((row) => {
+                        const delta = comparisonData.deltas[row.key] || {};
+                        const aValue = comparisonData.period_a[row.key];
+                        const bValue = comparisonData.period_b[row.key];
+                        return (
+                          <tr key={`delta-row-${row.key}`} className="border-b last:border-0">
+                            <td className="py-2">{row.label}</td>
+                            <td className="py-2">
+                              {aValue?.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-2">
+                              {bValue?.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-2">
+                              {delta.absolute?.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}{" "}
+                              {delta.percentage !== null &&
+                                delta.percentage !== undefined &&
+                                ` (${delta.percentage?.toLocaleString("en-US", {
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 2,
+                                })}%)`}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2 mt-6">
+                <div className="bg-white border rounded-lg p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                    أعلى المنتجات - الفترة A
+                  </h3>
+                  {renderProductTable(comparisonData.period_a.top_products)}
+                </div>
+                <div className="bg-white border rounded-lg p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                    أعلى المنتجات - الفترة B
+                  </h3>
+                  {renderProductTable(comparisonData.period_b.top_products)}
+                </div>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-2 mt-6">
+                <div className="bg-white border rounded-lg p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                    أقل المنتجات - الفترة A
+                  </h3>
+                  {renderProductTable(comparisonData.period_a.bottom_products)}
+                </div>
+                <div className="bg-white border rounded-lg p-4 shadow-sm">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                    أقل المنتجات - الفترة B
+                  </h3>
+                  {renderProductTable(comparisonData.period_b.bottom_products)}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
         {/* Loading / Error */}
         {loading && <p className="mb-4 text-gray-600">جاري تحميل التقرير...</p>}
         {error && (
           <p className="mb-4 text-red-600 text-sm">
-            {error}            
+            {error}                                   
           </p>
         )}
 

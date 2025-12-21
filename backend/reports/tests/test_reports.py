@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from branches.models import Branch
+from django.db.models import Q
 from core.models import Store, User
 from inventory.models import Category, Item
 from orders.models import Order, OrderItem
@@ -114,7 +115,7 @@ def test_period_stats_filters_by_month_and_year(reporting_setup):
     branch = reporting_setup["branch"]
     store = reporting_setup["store"]
     items = reporting_setup["items"]
-
+    
     june_date = timezone.make_aware(datetime(2024, 6, 15, 9, 0))
     july_date = timezone.make_aware(datetime(2024, 7, 3, 18, 30))
     past_year_date = timezone.make_aware(datetime(2023, 12, 25, 14, 0))
@@ -157,3 +158,124 @@ def test_period_stats_filters_by_month_and_year(reporting_setup):
     assert year_payload["total_sales"] == 60.0
     assert year_payload["top_products"][0]["name"] == "Salad"
     assert year_payload["bottom_products"][0]["name"] == "Salad"
+
+
+@pytest.mark.django_db
+def test_compare_sales_periods_with_presets(reporting_setup, monkeypatch):
+    client = reporting_setup["client"]
+    branch = reporting_setup["branch"]
+    store = reporting_setup["store"]
+    items = reporting_setup["items"]
+
+    frozen_now = timezone.make_aware(datetime(2024, 6, 10, 12, 0))
+    monkeypatch.setattr(timezone, "now", lambda: frozen_now)
+
+    current_week_day1 = timezone.make_aware(datetime(2024, 6, 10, 9, 0))
+    current_week_day3 = timezone.make_aware(datetime(2024, 6, 12, 15, 30))
+    previous_week_day1 = timezone.make_aware(datetime(2024, 6, 3, 11, 0))
+    previous_week_day5 = timezone.make_aware(datetime(2024, 6, 7, 18, 45))
+
+    create_order_with_items(store, branch, current_week_day1, [(items["burger"], 2)])
+    create_order_with_items(
+        store,
+        branch,
+        current_week_day3,
+        [
+            (items["pizza"], 1),
+            (items["salad"], 1),
+        ],
+    )
+    create_order_with_items(store, branch, previous_week_day1, [(items["pizza"], 1)])
+    create_order_with_items(store, branch, previous_week_day5, [(items["salad"], 2)])
+
+    assert Order.objects.count() == 4
+    paid_filter = Q(status="PAID") | Q(is_paid=True)
+    assert Order.objects.filter(paid_filter).count() == 4
+
+    response = client.get(
+        "/api/v1/reports/sales/compare/",
+        {
+            "period_a_preset": "current_week",
+            "period_b_preset": "previous_week",
+            "limit": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["period_a"]["label"] == "current_week"
+    assert payload["period_b"]["label"] == "previous_week"
+
+    assert payload["period_a"]["total_sales"] == 210.0  # 2*50 + 80 + 30
+    assert payload["period_b"]["total_sales"] == 140.0  # 80 + 2*30
+
+    assert payload["period_a"]["total_orders"] == 2
+    assert payload["period_b"]["total_orders"] == 2
+
+    assert payload["period_a"]["avg_order_value"] == 105.0
+    assert payload["period_b"]["avg_order_value"] == 70.0
+
+    assert payload["deltas"]["total_sales"]["absolute"] == 70.0
+    assert payload["deltas"]["total_sales"]["percentage"] == 50.0
+    assert payload["deltas"]["avg_order_value"]["absolute"] == 35.0
+
+    assert payload["period_a"]["top_products"][0]["name"] == "Burger"
+    assert payload["period_b"]["top_products"][0]["name"] == "Salad"
+
+
+@pytest.mark.django_db
+def test_compare_sales_periods_custom_and_empty(reporting_setup, monkeypatch):
+    client = reporting_setup["client"]
+    branch = reporting_setup["branch"]
+    store = reporting_setup["store"]
+    items = reporting_setup["items"]
+
+    frozen_now = timezone.make_aware(datetime(2024, 5, 5, 9, 0))
+    monkeypatch.setattr(timezone, "now", lambda: frozen_now)
+
+    create_order_with_items(
+        store,
+        branch,
+        timezone.make_aware(datetime(2024, 5, 1, 10, 0)),
+        [(items["burger"], 1)],
+    )
+    create_order_with_items(
+        store,
+        branch,
+        timezone.make_aware(datetime(2024, 5, 2, 11, 30)),
+        [(items["pizza"], 1)],
+    )
+
+    assert Order.objects.count() == 2
+    paid_filter = Q(status="PAID") | Q(is_paid=True)
+    assert Order.objects.filter(paid_filter).count() == 2
+
+    response = client.get(
+        "/api/v1/reports/sales/compare/",
+        {
+            "period_a_start": "2024-05-01",
+            "period_a_end": "2024-05-02",
+            "period_b_start": "2024-05-04",
+            "period_b_end": "2024-05-05",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["period_a"]["label"] == "custom"
+    assert payload["period_b"]["label"] == "custom"
+
+    assert payload["period_a"]["total_sales"] == 130.0
+    assert payload["period_a"]["total_orders"] == 2
+    assert payload["period_a"]["avg_order_value"] == 65.0
+
+    assert payload["period_b"]["total_sales"] == 0.0
+    assert payload["period_b"]["total_orders"] == 0
+    assert payload["period_b"]["avg_order_value"] == 0.0
+
+    assert payload["deltas"]["total_sales"]["absolute"] == 130.0
+    assert payload["deltas"]["total_sales"]["percentage"] is None
+    assert payload["period_a"]["top_products"][0]["name"] in {"Burger", "Pizza"}
+    assert payload["period_b"]["top_products"] == []
