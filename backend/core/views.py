@@ -320,9 +320,10 @@ def close_payroll(request, payroll_id):
         payroll=payroll,
         entry_type='SALARY',
         amount=payroll.net_salary,
+        payout_date=timezone.localdate(),
         description=f"Salary for {payroll.month.strftime('%Y-%m')}"
     )
-
+    
     return Response({
         "status": "success",
         "net_salary": payroll.net_salary

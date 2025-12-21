@@ -786,6 +786,87 @@ def expense_summary(request):
             }
         )
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def payroll_movements_report(request):
+    """
+    يعرض حركات الرواتب (سلف/خصومات/بدلات/صرف الرواتب) مع إجماليات الفترة.
+    - period_type: day | month | year
+    - period_value: 2024-06-01 (day) | 2024-06 (month) | 2024 (year)
+    """
+    try:
+        now = timezone.now()
+        period_type_param = request.query_params.get("period_type")
+        period_value_param = request.query_params.get("period_value")
+
+        period_type, normalized_value, filter_kwargs = _parse_period_for_field(
+            "payout_date", period_type_param, period_value_param, now, use_date_lookup=False
+        )
+
+        store = get_store_from_request(request)
+        queryset = EmployeeLedger.objects.select_related("employee__user")
+        if store:
+            queryset = queryset.filter(employee__store=store)
+
+        queryset = queryset.filter(**filter_kwargs).order_by("payout_date", "created_at")
+
+        totals = defaultdict(Decimal)
+        for row in queryset.values("entry_type").annotate(total=Sum("amount")):
+            totals[row["entry_type"].lower()] = row["total"] or Decimal("0")
+
+        salary_total = totals.get("salary", Decimal("0"))
+        bonus_total = totals.get("bonus", Decimal("0"))
+        penalty_total = totals.get("penalty", Decimal("0"))
+        advance_total = totals.get("advance", Decimal("0"))
+        net_total = (salary_total + bonus_total) - (penalty_total + advance_total)
+
+        movements = [
+            {
+                "id": entry.id,
+                "employee_id": entry.employee_id,
+                "employee_name": getattr(entry.employee.user, "name", None) or entry.employee.user.email,
+                "entry_type": entry.entry_type,
+                "amount": float(entry.amount),
+                "description": entry.description,
+                "payout_date": entry.payout_date.isoformat(),
+                "created_at": entry.created_at.isoformat(),
+            }
+            for entry in queryset
+        ]
+
+        return Response(
+            {
+                "period_type": period_type,
+                "period_value": normalized_value,
+                "totals": {
+                    "salary": float(salary_total),
+                    "bonus": float(bonus_total),
+                    "penalty": float(penalty_total),
+                    "advance": float(advance_total),
+                    "net": float(net_total),
+                },
+                "count": len(movements),
+                "movements": movements,
+            }
+        )
+    except (ProgrammingError, OperationalError) as e:
+        print("Payroll movements DB error:", e)
+        return Response(
+            {
+                "period_type": "day",
+                "period_value": None,
+                "totals": {
+                    "salary": 0.0,
+                    "bonus": 0.0,
+                    "penalty": 0.0,
+                    "advance": 0.0,
+                    "net": 0.0,
+                },
+                "count": 0,
+                "movements": [],
+            }
+        )
+
 
 
 @api_view(['GET'])

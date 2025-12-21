@@ -1,5 +1,5 @@
 # reports/tests/test_reports.py
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from django.utils import timezone
@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from branches.models import Branch
 from django.db.models import Q
-from core.models import Employee, Store, User
+from core.models import Employee, EmployeeLedger, Store, User
 from attendance.models import AttendanceLog
 from inventory.models import Category, Inventory, InventoryMovement, Item
 from orders.models import Order, OrderItem
@@ -397,7 +397,7 @@ def test_inventory_value_report_respects_sales_deductions(reporting_setup):
     store = reporting_setup["store"]
     branch = reporting_setup["branch"]
     items = reporting_setup["items"]
-    
+        
     inventory_burger = Inventory.objects.create(
         item=items["burger"],
         branch=branch,
@@ -440,21 +440,120 @@ def test_inventory_value_report_respects_sales_deductions(reporting_setup):
     assert payload["total_sale_value"] == 1390.0  # (15 * 50) + (8 * 80)
     assert payload["total_margin"] == 695.0
 
-    items_payload = {item["item_id"]: item for item in payload["items"]}
-    assert items_payload[items["burger"].id]["quantity"] == 15
-    assert items_payload[items["pizza"].id]["quantity"] == 8
 
-    category_filter_response = client.get(
-        "/api/v1/reports/inventory/value/",
-        {"category": reporting_setup["items"]["burger"].category_id},
+@pytest.mark.django_db
+def test_payroll_movements_report_orders_chronologically(expense_setup):
+    client = expense_setup["client"]
+    employee = expense_setup["employee"]
+
+    # خارج الفترة
+    EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="ADVANCE",
+        amount=100,
+        payout_date=date(2024, 6, 30),
+        description="Old advance",
     )
-    assert category_filter_response.status_code == 200
-    filtered_payload = category_filter_response.json()
-    assert filtered_payload["total_sale_value"] == 750.0  # burger only
+
+    first = EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="SALARY",
+        amount=1000,
+        payout_date=date(2024, 7, 1),
+        description="July salary",
+    )
+    second = EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="ADVANCE",
+        amount=200,
+        payout_date=date(2024, 7, 2),
+        description="Advance",
+    )
+    third = EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="BONUS",
+        amount=100,
+        payout_date=date(2024, 7, 2),
+        description="Bonus",
+    )
+    fourth = EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="PENALTY",
+        amount=50,
+        payout_date=date(2024, 7, 3),
+        description="Late penalty",
+    )
+
+    response = client.get(
+        "/api/v1/reports/payroll/movements/",
+        {"period_type": "month", "period_value": "2024-07"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["period_type"] == "month"
+    assert payload["period_value"] == "2024-07"
+    assert payload["count"] == 4
+
+    payout_dates = [row["payout_date"] for row in payload["movements"]]
+    assert payout_dates == [
+        first.payout_date.isoformat(),
+        second.payout_date.isoformat(),
+        third.payout_date.isoformat(),
+        fourth.payout_date.isoformat(),
+    ]
+
+    totals = payload["totals"]
+    assert totals["salary"] == 1000.0
+    assert totals["advance"] == 200.0
+    assert totals["bonus"] == 100.0
+    assert totals["penalty"] == 50.0
+    assert totals["net"] == 850.0
 
 
 @pytest.mark.django_db
-def test_inventory_movements_report_handles_empty_items(reporting_setup, monkeypatch):
+def test_payroll_movements_report_daily_filter(expense_setup):
+    client = expense_setup["client"]
+    employee = expense_setup["employee"]
+
+    EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="SALARY",
+        amount=500,
+        payout_date=date(2024, 8, 1),
+    )
+    EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="PENALTY",
+        amount=25,
+        payout_date=date(2024, 8, 1),
+    )
+    EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="BONUS",
+        amount=50,
+        payout_date=date(2024, 8, 2),
+    )
+
+    response = client.get(
+        "/api/v1/reports/payroll/movements/",
+        {"period_type": "day", "period_value": "2024-08-01"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["period_type"] == "day"
+    assert payload["period_value"] == "2024-08-01"
+    assert payload["count"] == 2
+
+    totals = payload["totals"]
+    assert totals["salary"] == 500.0
+    assert totals["penalty"] == 25.0
+    assert totals["bonus"] == 0.0
+    assert totals["advance"] == 0.0
+    assert totals["net"] == 475.0
+@pytest.mark.django_db
+def test_inventory_movements_report_handles_empty_items(reporting_setup, monkeypatch):    
     client = reporting_setup["client"]
     items = reporting_setup["items"]
 

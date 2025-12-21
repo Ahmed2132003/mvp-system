@@ -392,8 +392,10 @@ class EmployeeLedger(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     description = models.CharField(max_length=255, blank=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    # تاريخ صرف/تسجيل الحركة (اليوم الفعلي للصرف)
+    payout_date = models.DateField(default=timezone.localdate, db_index=True)
 
+    created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         ordering = ["-created_at"]
 
