@@ -1,9 +1,10 @@
 # backend/reports/views.py
 from calendar import monthrange
 from datetime import date, timedelta
+from decimal import Decimal
 
-from django.db.models import Sum, F, Count, Q
-from django.db.models.functions import TruncHour, TruncDate, TruncMonth
+from django.db.models import Sum, F, Count, Q, Value, DecimalField
+from django.db.models.functions import TruncHour, TruncDate, TruncMonth, Coalesce
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -13,8 +14,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.models import EmployeeLedger, PayrollPeriod
-from inventory.models import Inventory
+from inventory.models import Inventory, InventoryMovement
 from orders.models import Order, OrderItem, Payment
+from attendance.models import AttendanceLog
+from core.models import Employee
 
 
 def _empty_summary():
@@ -349,6 +352,43 @@ def _parse_lookup_value(lookup, raw_value, now):
         parsed_int = default_int
     return parsed_int, str(parsed_int)
 
+def _parse_period_for_field(date_field, period_type_param, period_value_param, now, use_date_lookup=True):
+    """
+    Normalize period filters for arbitrary date/datetime fields.
+    Returns (period_type, normalized_value, filter_kwargs).
+    """
+    period_type = (period_type_param or "day").lower()
+    if period_type not in {"day", "month", "year"}:
+        period_type = "day"
+
+    if period_type == "day":
+        parsed_date = parse_date(period_value_param) or now.date()
+        filter_key = f"{date_field}__date" if use_date_lookup else date_field
+        return period_type, parsed_date.isoformat(), {filter_key: parsed_date}
+
+    if period_type == "month":
+        parsed_month = None
+        if period_value_param:
+            parsed_month = parse_date(f"{period_value_param}-01") or parse_date(period_value_param)
+        parsed_month = parsed_month or now.date().replace(day=1)
+        return (
+            period_type,
+            parsed_month.strftime("%Y-%m"),
+            {
+                f"{date_field}__year": parsed_month.year,
+                f"{date_field}__month": parsed_month.month,
+            },
+        )
+
+    # year
+    try:
+        parsed_year = int(period_value_param)
+    except (TypeError, ValueError):
+        parsed_year = now.date().year
+
+    return period_type, str(parsed_year), {f"{date_field}__year": parsed_year}
+
+
 def _preset_period_range(today, preset_key):
     current_week_start = today - timedelta(days=today.weekday())
     current_month_start = today.replace(day=1)
@@ -643,6 +683,72 @@ def period_sales_statistics(request):
                 "bottom_products": [],
             }
         )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def expense_summary(request):
+    """
+    إجمالي المصروفات (رواتب + مشتريات) لفترة محددة:
+    - period_type: day | month | year
+    - period_value: 2024-06-01 (day), 2024-06 (month), 2024 (year)
+    """
+    try:
+        now = timezone.now()
+        period_type_param = request.query_params.get("period_type")
+        period_value_param = request.query_params.get("period_value")
+
+        period_type, normalized_value, attendance_filter = _parse_period_for_field(
+            "work_date", period_type_param, period_value_param, now, use_date_lookup=False
+        )
+        _, _, purchase_filter = _parse_period_for_field(
+            "created_at", period_type_param, period_value_param, now
+        )
+
+        attendance_rows = (
+            AttendanceLog.objects.filter(**attendance_filter)
+            .values("employee_id", "employee__salary")
+            .annotate(days=Count("work_date", distinct=True))
+        )
+
+        payroll_total = Decimal("0")
+        for row in attendance_rows:
+            salary = row.get("employee__salary") or Decimal("0")
+            days = row.get("days") or 0
+            daily_rate = salary / Decimal("30")
+            payroll_total += daily_rate * days
+
+        purchase_qs = (
+            InventoryMovement.objects.filter(movement_type="IN", change__gt=0, **purchase_filter)
+            .annotate(
+                cost=F("change")
+                * Coalesce(F("item__cost_price"), Value(0), output_field=DecimalField(max_digits=10, decimal_places=2))
+            )
+        )
+        purchase_total = purchase_qs.aggregate(total=Sum("cost"))["total"] or Decimal("0")
+
+        total_expense = payroll_total + purchase_total
+
+        return Response(
+            {
+                "period_type": period_type,
+                "period_value": normalized_value,
+                "payroll_total": float(payroll_total),
+                "purchase_total": float(purchase_total),
+                "total_expense": float(total_expense),
+            }
+        )
+    except (ProgrammingError, OperationalError) as e:
+        print("Expense summary DB error:", e)
+        return Response(
+            {
+                "period_type": "day",
+                "period_value": None,
+                "payroll_total": 0.0,
+                "purchase_total": 0.0,
+                "total_expense": 0.0,
+            }
+        )
+
 
 
 @api_view(['GET'])

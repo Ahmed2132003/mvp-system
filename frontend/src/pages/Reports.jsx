@@ -69,6 +69,14 @@ export default function Reports() {
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState(null);
 
+  const [expenseFilters, setExpenseFilters] = useState({
+    periodType: "month",
+    periodValue: formatMonthInput(today),
+  });
+  const [expenses, setExpenses] = useState(null);
+  const [expenseLoading, setExpenseLoading] = useState(false);
+  const [expenseError, setExpenseError] = useState(null);
+
   // Toast
   const [toast, setToast] = useState({
     open: false,
@@ -184,10 +192,35 @@ export default function Reports() {
     }
   };
 
+  const fetchExpenses = async () => {
+    try {
+      setExpenseLoading(true);
+      setExpenseError(null);
+
+      const res = await api.get("/reports/expenses/", {
+        params: {
+          period_type: expenseFilters.periodType,
+          period_value: expenseFilters.periodValue,
+        },
+      });
+
+      setExpenses(res.data);
+      showToast("تم تحديث إجمالي المصروفات.", "success");
+    } catch (err) {
+      console.error("خطأ في تحميل المصروفات:", err);
+      const msg = "حدث خطأ أثناء تحميل المصروفات. حاول مرة أخرى.";
+      setExpenseError(msg);
+      showToast(msg, "error");
+    } finally {
+      setExpenseLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchReport();
     fetchPeriodStats();
     fetchComparison();
+    fetchExpenses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -239,6 +272,30 @@ export default function Reports() {
     setCompareFilters((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleExpenseTypeChange = (e) => {
+    const newType = e.target.value;
+    let nextValue = expenseFilters.periodValue;
+
+    if (newType === "day") {
+      nextValue = formatDateInput(today);
+    } else if (newType === "month") {
+      nextValue = formatMonthInput(today);
+    } else {
+      nextValue = formatYearInput(today);
+    }
+
+    setExpenseFilters((prev) => ({
+      ...prev,
+      periodType: newType,
+      periodValue: nextValue,
+    }));
+  };
+
+  const handleExpenseFilterChange = (e) => {
+    const { name, value } = e.target;
+    setExpenseFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleApplyFilters = (e) => {
     e.preventDefault();
     fetchReport();
@@ -253,6 +310,11 @@ export default function Reports() {
   const handleApplyComparison = (e) => {
     e.preventDefault();
     fetchComparison();
+  };
+
+  const handleApplyExpenses = (e) => {
+    e.preventDefault();
+    fetchExpenses();
   };
 
   const handleExportCsv = () => {
@@ -356,11 +418,19 @@ export default function Reports() {
     { key: "total_orders", label: "عدد الطلبات" },
     { key: "avg_order_value", label: "متوسط قيمة الطلب" },
   ];
+  const expenseData =
+    expenses || {
+      period_type: expenseFilters.periodType,
+      period_value: expenseFilters.periodValue,
+      payroll_total: 0,
+      purchase_total: 0,
+      total_expense: 0,
+    };
 
   const renderProductTable = (products) =>
     products.length === 0 ? (
       <p className="text-sm text-gray-500">لا توجد بيانات كافية.</p>
-    ) : (
+    ) : (      
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b">
@@ -453,11 +523,128 @@ export default function Reports() {
           </div>
         </form>
 
+        {/* Expense summary */}
+        <div className="bg-white shadow rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">إجمالي المصروفات (رواتب + مشتريات)</h2>
+          </div>
+
+          <form onSubmit={handleApplyExpenses} className="grid gap-4 md:grid-cols-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">نوع الفترة</label>
+              <select
+                name="periodType"
+                value={expenseFilters.periodType}
+                onChange={handleExpenseTypeChange}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="day">اليوم</option>
+                <option value="month">الشهر</option>
+                <option value="year">السنة</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">قيمة الفترة</label>
+              {expenseFilters.periodType === "day" && (
+                <input
+                  type="date"
+                  name="periodValue"
+                  value={expenseFilters.periodValue}
+                  onChange={handleExpenseFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+              {expenseFilters.periodType === "month" && (
+                <input
+                  type="month"
+                  name="periodValue"
+                  value={expenseFilters.periodValue}
+                  onChange={handleExpenseFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+              {expenseFilters.periodType === "year" && (
+                <input
+                  type="number"
+                  name="periodValue"
+                  min="2000"
+                  value={expenseFilters.periodValue}
+                  onChange={handleExpenseFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                تحديث المصروفات
+              </button>
+            </div>
+          </form>
+
+          {expenseLoading && (
+            <p className="mt-4 text-gray-600 text-sm">جاري تحميل بيانات المصروفات...</p>
+          )}
+          {expenseError && (
+            <p className="mt-4 text-red-600 text-sm">{expenseError}</p>
+          )}
+
+          {!expenseLoading && !expenseError && (
+            <div className="grid gap-4 md:grid-cols-3 mt-4">
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs text-gray-500 mb-1">الفترة</p>
+                <p className="text-sm font-semibold text-gray-800">
+                  {expenseData.period_type === "day"
+                    ? "اليوم"
+                    : expenseData.period_type === "month"
+                      ? "الشهر"
+                      : "السنة"}{" "}
+                  - {expenseData.period_value}
+                </p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs text-gray-500 mb-1">إجمالي الرواتب</p>
+                <p className="text-lg font-semibold text-gray-800">
+                  {expenseData.payroll_total?.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  جنيه
+                </p>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs text-gray-500 mb-1">إجمالي المشتريات</p>
+                <p className="text-lg font-semibold text-gray-800">
+                  {expenseData.purchase_total?.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  جنيه
+                </p>
+              </div>
+              <div className="bg-blue-50 rounded-lg p-4 md:col-span-3">
+                <p className="text-xs text-gray-600 mb-1">إجمالي المصروفات</p>
+                <p className="text-xl font-bold text-blue-800">
+                  {expenseData.total_expense?.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  جنيه
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Period stats filters */}
         <div className="bg-white shadow rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-800">
-              إحصائيات الفترة (يوم / شهر / سنة)
+              إحصائيات الفترة (يوم / شهر / سنة)              
             </h2>
           </div>
           <form

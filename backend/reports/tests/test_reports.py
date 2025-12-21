@@ -1,5 +1,5 @@
 # reports/tests/test_reports.py
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from django.utils import timezone
@@ -7,8 +7,9 @@ from rest_framework.test import APIClient
 
 from branches.models import Branch
 from django.db.models import Q
-from core.models import Store, User
-from inventory.models import Category, Item
+from core.models import Employee, Store, User
+from attendance.models import AttendanceLog
+from inventory.models import Category, Inventory, InventoryMovement, Item
 from orders.models import Order, OrderItem
 
 
@@ -46,7 +47,7 @@ def create_order_with_items(store, branch, created_at, items_quantities):
     """Helper to create a paid order with specific created_at and attached items."""
     order = Order.objects.create(
         store=store,
-        branch=branch,
+        branch=branch,        
         status="PAID",
         is_paid=True,
         total=0,
@@ -61,6 +62,44 @@ def create_order_with_items(store, branch, created_at, items_quantities):
 
     return order
 
+
+@pytest.fixture
+def expense_setup(db):
+    user = User.objects.create_user(email="owner2@example.com", password="pass", is_active=True)
+    store = Store.objects.create(name="Expense Store", owner=user)
+    branch = Branch.objects.create(name="Expense Branch", store=store)
+    category = Category.objects.create(name="Supplies", store=store)
+    item = Item.objects.create(
+        name="Cheese",
+        store=store,
+        category=category,
+        unit_price=50,
+        cost_price=25,
+    )
+    inventory = Inventory.objects.create(item=item, branch=branch, quantity=0, min_stock=0)
+    employee = Employee.objects.create(
+        user=User.objects.create_user(
+            email="employee@example.com",
+            password="pass",
+            is_active=True,
+        ),
+        store=store,
+        branch=branch,
+        salary=3000,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    return {
+        "user": user,
+        "store": store,
+        "branch": branch,
+        "item": item,
+        "inventory": inventory,
+        "employee": employee,
+        "client": client,
+    }
 
 @pytest.mark.django_db
 def test_period_stats_filters_by_day_and_returns_top_and_bottom(reporting_setup):
@@ -230,7 +269,7 @@ def test_compare_sales_periods_custom_and_empty(reporting_setup, monkeypatch):
     branch = reporting_setup["branch"]
     store = reporting_setup["store"]
     items = reporting_setup["items"]
-
+    
     frozen_now = timezone.make_aware(datetime(2024, 5, 5, 9, 0))
     monkeypatch.setattr(timezone, "now", lambda: frozen_now)
 
@@ -279,3 +318,75 @@ def test_compare_sales_periods_custom_and_empty(reporting_setup, monkeypatch):
     assert payload["deltas"]["total_sales"]["percentage"] is None
     assert payload["period_a"]["top_products"][0]["name"] in {"Burger", "Pizza"}
     assert payload["period_b"]["top_products"] == []
+
+
+@pytest.mark.django_db
+def test_expense_summary_daily_attendance_only(expense_setup):
+    client = expense_setup["client"]
+    employee = expense_setup["employee"]
+
+    target_date = timezone.make_aware(datetime(2024, 6, 1, 9, 0))
+    AttendanceLog.objects.create(
+        employee=employee,
+        check_in=target_date,
+        check_out=target_date + timedelta(hours=8),
+        work_date=target_date.date(),
+    )
+
+    response = client.get(
+        "/api/v1/reports/expenses/",
+        {"period_type": "day", "period_value": target_date.date().isoformat()},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["payroll_total"] == 100.0  # 3000 / 30 * 1 day
+    assert payload["purchase_total"] == 0.0
+    assert payload["total_expense"] == 100.0
+    assert payload["period_type"] == "day"
+    assert payload["period_value"] == target_date.date().isoformat()
+
+
+@pytest.mark.django_db
+def test_expense_summary_monthly_attendance_and_purchases(expense_setup):
+    client = expense_setup["client"]
+    employee = expense_setup["employee"]
+    inventory = expense_setup["inventory"]
+    item = expense_setup["item"]
+
+    AttendanceLog.objects.create(
+        employee=employee,
+        check_in=timezone.make_aware(datetime(2024, 7, 1, 9, 0)),
+        check_out=timezone.make_aware(datetime(2024, 7, 1, 17, 0)),
+        work_date=datetime(2024, 7, 1).date(),
+    )
+    AttendanceLog.objects.create(
+        employee=employee,
+        check_in=timezone.make_aware(datetime(2024, 7, 2, 9, 0)),
+        check_out=timezone.make_aware(datetime(2024, 7, 2, 17, 0)),
+        work_date=datetime(2024, 7, 2).date(),
+    )
+
+    movement = InventoryMovement.objects.create(
+        inventory=inventory,
+        item=item,
+        branch=expense_setup["branch"],
+        change=10,
+        movement_type="IN",
+        created_by=None,
+        reason="Restock",
+    )
+    # اضبط وقت الإدخال ليتماشى مع الفلتر الشهري
+    july_created_at = timezone.make_aware(datetime(2024, 7, 5, 12, 0))
+    InventoryMovement.objects.filter(pk=movement.pk).update(created_at=july_created_at)
+
+    response = client.get("/api/v1/reports/expenses/", {"period_type": "month", "period_value": "2024-07"})
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["period_type"] == "month"
+    assert payload["period_value"] == "2024-07"
+    assert payload["payroll_total"] == 200.0  # 2 days * 100
+    assert payload["purchase_total"] == 250.0  # 10 * cost_price 25
+    assert payload["total_expense"] == 450.0
