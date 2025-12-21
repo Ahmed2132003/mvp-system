@@ -5,6 +5,7 @@ from .views import (
     compare_sales_periods,
     expense_summary,
     inventory_value_report,
+    inventory_movements_report,
     period_sales_statistics,
     sales_report,
 )
@@ -21,5 +22,6 @@ urlpatterns = [
     path('accounting/', api_accounting, name='api_reports_accounting'),
     path('expenses/', expense_summary, name='expense_summary'),
     path('inventory/value/', inventory_value_report, name='inventory_value_report'),
+    path('inventory/movements/', inventory_movements_report, name='inventory_movements_report'),
 
 ]

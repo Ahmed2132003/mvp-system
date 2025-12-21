@@ -14,11 +14,48 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from core.models import EmployeeLedger, PayrollPeriod
-from inventory.models import Inventory, InventoryMovement
+from inventory.models import Inventory, InventoryMovement, Item
 from orders.models import Order, OrderItem, Payment
 from attendance.models import AttendanceLog
 from core.models import Employee
 from core.utils.store_context import get_branch_from_request, get_store_from_request
+from collections import defaultdict
+
+
+def _resolve_inventory_period(now, period_type_param, period_value_param):
+    period_type = (period_type_param or "day").lower()
+    if period_type not in {"day", "month", "year"}:
+        period_type = "day"
+
+    today = now.date()
+
+    if period_type == "day":
+        target_date = parse_date(period_value_param) or today
+        start_date = target_date
+        end_date = target_date
+        normalized_value = target_date.isoformat()
+    elif period_type == "month":
+        parsed_month = None
+        if period_value_param:
+            parsed_month = parse_date(f"{period_value_param}-01") or parse_date(period_value_param)
+
+        parsed_month = parsed_month or today.replace(day=1)
+        days_in_month = monthrange(parsed_month.year, parsed_month.month)[1]
+        start_date = parsed_month
+        end_date = parsed_month.replace(day=days_in_month)
+        normalized_value = parsed_month.strftime("%Y-%m")
+    else:
+        try:
+            parsed_year = int(period_value_param)
+        except (TypeError, ValueError):
+            parsed_year = today.year
+
+        start_date = date(parsed_year, 1, 1)
+        end_date = date(parsed_year, 12, 31)
+        normalized_value = str(parsed_year)
+
+    days_in_period = (end_date - start_date).days + 1
+    return period_type, normalized_value, start_date, end_date, days_in_period
 
 def _empty_summary():
     return {
@@ -797,6 +834,211 @@ def api_accounting(request):
         "net_out": net_out,
         "generated_at": timezone.now(),
     })
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def inventory_movements_report(request):
+    """
+    تجميع حركات المخزون (وارد/صادر) مع مبيعات كل صنف وفترة زمنية (يوم/شهر/سنة).
+    - period_type: day | month | year
+    - period_value: 2024-06-10 (day) | 2024-06 (month) | 2024 (year)
+    - branch (اختياري)
+    """
+    try:
+        now = timezone.now()
+        period_type_param = request.query_params.get("period_type")
+        period_value_param = request.query_params.get("period_value")
+
+        period_type, normalized_value, start_date, end_date, days_in_period = _resolve_inventory_period(
+            now, period_type_param, period_value_param
+        )
+
+        store = get_store_from_request(request)
+        if not store:
+            return Response(
+                {
+                    "period_type": period_type,
+                    "period_value": normalized_value,
+                    "start": start_date.isoformat(),
+                    "end": end_date.isoformat(),
+                    "days": days_in_period,
+                    "items": [],
+                }
+            )
+
+        branch = get_branch_from_request(request, store=store)
+
+        # احضر كل الأصناف في المتجر (ومرتبطة بالفرع إن وجد) لضمان ظهور الأصناف بلا حركة
+        items_qs = Item.objects.filter(store=store)
+        if branch:
+            items_qs = items_qs.filter(
+                Q(inventory_entries__branch=branch)
+                | Q(inventory_movements__branch=branch)
+                | Q(orderitem__order__branch=branch)
+            )
+        items_qs = items_qs.select_related("category").distinct()
+
+        items_map = {
+            item.id: {
+                "item_id": item.id,
+                "name": item.name,
+                "category_id": item.category_id,
+                "category_name": item.category.name if item.category else None,
+                "incoming": 0,
+                "outgoing": 0,
+                "sales_quantity": 0,
+                "total_outgoing": 0,
+                "net_change": 0,
+                "consumption_rate": 0,
+                "timeline": [],
+            }
+            for item in items_qs
+        }
+
+        if not items_map:
+            return Response(
+                {
+                    "period_type": period_type,
+                    "period_value": normalized_value,
+                    "start": start_date.isoformat(),
+                    "end": end_date.isoformat(),
+                    "days": days_in_period,
+                    "items": [],
+                }
+            )
+
+        date_filters = {
+            "created_at__date__gte": start_date,
+            "created_at__date__lte": end_date,
+        }
+
+        movements_qs = InventoryMovement.objects.filter(branch__store=store, **date_filters)
+        if branch:
+            movements_qs = movements_qs.filter(branch=branch)
+
+        movements_rows = movements_qs.values("item_id").annotate(
+            incoming=Coalesce(Sum("change", filter=Q(change__gt=0)), Value(0)),
+            outgoing=Coalesce(-Sum("change", filter=Q(change__lt=0)), Value(0)),
+        )
+
+        for row in movements_rows:
+            item_id = row["item_id"]
+            if item_id not in items_map:
+                continue
+            items_map[item_id]["incoming"] = float(row["incoming"] or 0)
+            items_map[item_id]["outgoing"] = float(row["outgoing"] or 0)
+
+        paid_filter = Q(order__status="PAID") | Q(order__is_paid=True)
+        sales_qs = OrderItem.objects.filter(
+            paid_filter,
+            order__store=store,
+            order__created_at__date__gte=start_date,
+            order__created_at__date__lte=end_date,
+        )
+        if branch:
+            sales_qs = sales_qs.filter(order__branch=branch)
+
+        sales_rows = sales_qs.values("item_id").annotate(
+            sales_qty=Coalesce(Sum("quantity"), Value(0)),
+        )
+
+        for row in sales_rows:
+            item_id = row["item_id"]
+            if item_id not in items_map:
+                continue
+            items_map[item_id]["sales_quantity"] = float(row["sales_qty"] or 0)
+
+        # تجميع سلاسل زمنية
+        trunc_map = {
+            "day": TruncHour("created_at"),
+            "month": TruncDate("created_at"),
+            "year": TruncMonth("created_at"),
+        }
+        trunc = trunc_map.get(period_type, TruncDate("created_at"))
+        sales_trunc_map = {
+            "day": TruncHour("order__created_at"),
+            "month": TruncDate("order__created_at"),
+            "year": TruncMonth("order__created_at"),
+        }
+        sales_trunc = sales_trunc_map.get(period_type, TruncDate("order__created_at"))
+
+        movement_series = movements_qs.annotate(period=trunc).values("item_id", "period").annotate(
+            incoming=Coalesce(Sum("change", filter=Q(change__gt=0)), Value(0)),
+            outgoing=Coalesce(-Sum("change", filter=Q(change__lt=0)), Value(0)),
+        )
+
+        sales_series = sales_qs.annotate(period=sales_trunc).values("item_id", "period").annotate(
+            sales_qty=Coalesce(Sum("quantity"), Value(0)),
+        )
+
+        timeline_map = defaultdict(lambda: defaultdict(lambda: {"incoming": 0, "outgoing": 0, "sales": 0}))
+
+        for row in movement_series:
+            item_id = row["item_id"]
+            if item_id not in items_map or row["period"] is None:
+                continue
+            timeline_map[item_id][row["period"]]["incoming"] += float(row["incoming"] or 0)
+            timeline_map[item_id][row["period"]]["outgoing"] += float(row["outgoing"] or 0)
+
+        for row in sales_series:
+            item_id = row["item_id"]
+            if item_id not in items_map or row["period"] is None:
+                continue
+            timeline_map[item_id][row["period"]]["sales"] += float(row["sales_qty"] or 0)
+
+        days_divisor = max(days_in_period, 1)
+        for item_id, payload in items_map.items():
+            sales_qty = payload["sales_quantity"]
+            total_outgoing = payload["outgoing"] + sales_qty
+            payload["total_outgoing"] = total_outgoing
+            payload["net_change"] = payload["incoming"] - total_outgoing
+            payload["consumption_rate"] = round(sales_qty / days_divisor, 2)
+
+            periods = sorted(timeline_map[item_id].keys())
+            for period in periods:
+                stats = timeline_map[item_id][period]
+                if period_type == "day":
+                    label = period.strftime("%Y-%m-%d %H:00")
+                elif period_type == "year":
+                    label = period.strftime("%Y-%m")
+                else:
+                    label = period.strftime("%Y-%m-%d")
+
+                total_out = stats["outgoing"] + stats["sales"]
+                payload["timeline"].append(
+                    {
+                        "label": label,
+                        "incoming": stats["incoming"],
+                        "outgoing": stats["outgoing"],
+                        "sales": stats["sales"],
+                        "total_outgoing": total_out,
+                        "net_change": stats["incoming"] - total_out,
+                    }
+                )
+
+        items_payload = sorted(items_map.values(), key=lambda x: x["name"].lower())
+
+        return Response(
+            {
+                "period_type": period_type,
+                "period_value": normalized_value,
+                "start": start_date.isoformat(),
+                "end": end_date.isoformat(),
+                "days": days_in_period,
+                "items": items_payload,
+            }
+        )
+    except (ProgrammingError, OperationalError) as e:
+        print("Inventory movements report DB error:", e)
+        return Response(
+            {
+                "period_type": period_type_param or "day",
+                "period_value": period_value_param,
+                "start": None,
+                "end": None,
+                "days": 0,
+                "items": [],
+            }
+        )
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

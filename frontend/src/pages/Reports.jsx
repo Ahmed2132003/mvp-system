@@ -1,5 +1,5 @@
 // src/pages/Reports.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "../lib/api";
 
 import {
@@ -83,6 +83,15 @@ export default function Reports() {
     category: "",
     branch: "",
   });
+  const [movementFilters, setMovementFilters] = useState({
+    periodType: "month",
+    periodValue: formatMonthInput(today),
+    branch: "",
+  });
+  const [inventoryMovements, setInventoryMovements] = useState(null);
+  const [movementLoading, setMovementLoading] = useState(false);
+  const [movementError, setMovementError] = useState(null);
+  const [selectedMovementItemId, setSelectedMovementItemId] = useState(null);
 
   // Toast
   const [toast, setToast] = useState({
@@ -244,12 +253,40 @@ export default function Reports() {
     }
   };
 
+  const fetchInventoryMovements = async () => {
+    try {
+      setMovementLoading(true);
+      setMovementError(null);
+
+      const params = {
+        period_type: movementFilters.periodType,
+        period_value: movementFilters.periodValue,
+      };
+      if (movementFilters.branch) params.branch = movementFilters.branch;
+
+      const res = await api.get("/reports/inventory/movements/", { params });
+      setInventoryMovements(res.data);
+      const firstItemId = res.data?.items?.[0]?.item_id;
+      if (firstItemId && !selectedMovementItemId) {
+        setSelectedMovementItemId(firstItemId);
+      }
+    } catch (err) {
+      console.error("خطأ في تحميل حركات المخزون:", err);
+      const msg = "تعذر تحميل حركات المخزون.";
+      setMovementError(msg);
+      showToast(msg, "error");
+    } finally {
+      setMovementLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchReport();
     fetchPeriodStats();
     fetchComparison();
     fetchExpenses();
     fetchInventoryValue();
+    fetchInventoryMovements();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -330,6 +367,30 @@ export default function Reports() {
     setInventoryFilters((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleMovementTypeChange = (e) => {
+    const newType = e.target.value;
+    let nextValue = movementFilters.periodValue;
+
+    if (newType === "day") {
+      nextValue = formatDateInput(today);
+    } else if (newType === "month") {
+      nextValue = formatMonthInput(today);
+    } else {
+      nextValue = formatYearInput(today);
+    }
+
+    setMovementFilters((prev) => ({
+      ...prev,
+      periodType: newType,
+      periodValue: nextValue,
+    }));
+  };
+
+  const handleMovementFilterChange = (e) => {
+    const { name, value } = e.target;
+    setMovementFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleApplyFilters = (e) => {
     e.preventDefault();
     fetchReport();
@@ -356,6 +417,11 @@ export default function Reports() {
     fetchInventoryValue();
   };
 
+  const handleApplyMovementFilters = (e) => {
+    e.preventDefault();
+    fetchInventoryMovements();
+  };
+  
   const handleExportCsv = () => {
     if (!data || !data.series || data.series.length === 0) {
       showToast("لا توجد بيانات لتصديرها.", "error");
@@ -472,6 +538,31 @@ export default function Reports() {
       total_margin: 0,
       items: [],
     };
+  const movementSummary =
+    inventoryMovements || {
+      period_type: movementFilters.periodType,
+      period_value: movementFilters.periodValue,
+      items: [],
+    };
+  const movementItems = useMemo(() => movementSummary.items || [], [movementSummary.items]);
+  const selectedMovementItem =
+    movementItems.find((item) => item.item_id === selectedMovementItemId) ||
+    movementItems[0];
+  const movementChartData = (selectedMovementItem?.timeline || []).map((row) => ({
+    label: row.label,
+    incoming: row.incoming,
+    outgoing: row.total_outgoing,
+    sales: row.sales,
+    net_change: row.net_change,
+  }));
+
+  useEffect(() => {
+    if (!movementItems.length) return;
+    const exists = movementItems.some((item) => item.item_id === selectedMovementItemId);
+    if (!selectedMovementItemId || !exists) {
+      setSelectedMovementItemId(movementItems[0].item_id);
+    }
+  }, [movementItems, selectedMovementItemId]);
 
   const renderProductTable = (products) =>
     products.length === 0 ? (
@@ -697,12 +788,192 @@ export default function Reports() {
           )}
         </div>
 
+        {/* Inventory movements and consumption */}
+        <div className="bg-white shadow rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">حركات المخزون ومعدل الاستهلاك</h2>
+          </div>
+
+          <form onSubmit={handleApplyMovementFilters} className="grid gap-4 md:grid-cols-5">
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">نوع الفترة</label>
+              <select
+                name="periodType"
+                value={movementFilters.periodType}
+                onChange={handleMovementTypeChange}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="day">اليوم</option>
+                <option value="month">الشهر</option>
+                <option value="year">السنة</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">قيمة الفترة</label>
+              {movementFilters.periodType === "day" && (
+                <input
+                  type="date"
+                  name="periodValue"
+                  value={movementFilters.periodValue}
+                  onChange={handleMovementFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+              {movementFilters.periodType === "month" && (
+                <input
+                  type="month"
+                  name="periodValue"
+                  value={movementFilters.periodValue}
+                  onChange={handleMovementFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+              {movementFilters.periodType === "year" && (
+                <input
+                  type="number"
+                  name="periodValue"
+                  min="2000"
+                  value={movementFilters.periodValue}
+                  onChange={handleMovementFilterChange}
+                  className="border rounded px-2 py-1 text-sm"
+                />
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">الفرع (اختياري)</label>
+              <input
+                type="number"
+                name="branch"
+                value={movementFilters.branch}
+                onChange={handleMovementFilterChange}
+                className="border rounded px-2 py-1 text-sm"
+                min="1"
+                placeholder="ID الفرع"
+              />
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                تحديث الحركات
+              </button>
+            </div>
+          </form>
+
+          {movementLoading && <p className="mt-4 text-gray-600 text-sm">جاري تحميل حركات المخزون...</p>}
+          {movementError && <p className="mt-4 text-red-600 text-sm">{movementError}</p>}
+
+          {!movementLoading && !movementError && (
+            <>
+              <div className="grid gap-4 md:grid-cols-3 mt-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">الفترة</p>
+                  <p className="text-sm font-semibold text-gray-800">
+                    {movementSummary.period_type === "day"
+                      ? "اليوم"
+                      : movementSummary.period_type === "month"
+                        ? "الشهر"
+                        : "السنة"}{" "}
+                    - {movementSummary.period_value}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">عدد الأصناف</p>
+                  <p className="text-lg font-semibold text-gray-800">{movementItems.length}</p>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 mb-1">اختصار</p>
+                  <p className="text-sm text-blue-800">
+                    يتم احتساب معدل الاستهلاك = الكمية المباعة ÷ عدد أيام الفترة.
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-auto mt-4">
+                {movementItems.length === 0 ? (
+                  <p className="text-sm text-gray-500">لا توجد حركات مخزون في الفترة المحددة.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-right py-2">الصنف</th>
+                        <th className="text-right py-2">التصنيف</th>
+                        <th className="text-right py-2">وارد</th>
+                        <th className="text-right py-2">صادر (حركات)</th>
+                        <th className="text-right py-2">مبيعات</th>
+                        <th className="text-right py-2">صافي التغير</th>
+                        <th className="text-right py-2">معدل الاستهلاك/يوم</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {movementItems.map((item) => (
+                        <tr key={item.item_id} className="border-b last:border-0">
+                          <td className="py-2">{item.name}</td>
+                          <td className="py-2">{item.category_name || "بدون تصنيف"}</td>
+                          <td className="py-2">{item.incoming}</td>
+                          <td className="py-2">{item.outgoing}</td>
+                          <td className="py-2">{item.sales_quantity}</td>
+                          <td className="py-2">{item.net_change}</td>
+                          <td className="py-2">{item.consumption_rate}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <div className="mt-6">
+                <div className="flex items-center gap-3 mb-3 flex-wrap">
+                  <h3 className="text-sm font-semibold text-gray-800">الرسم البياني للحركة والزمن</h3>
+                  {movementItems.length > 0 && (
+                    <select
+                      value={selectedMovementItem?.item_id || ""}
+                      onChange={(e) => setSelectedMovementItemId(Number(e.target.value))}
+                      className="border rounded px-2 py-1 text-sm"
+                    >
+                      {movementItems.map((item) => (
+                        <option key={item.item_id} value={item.item_id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {movementItems.length === 0 ? (
+                  <p className="text-sm text-gray-500">لا توجد بيانات لعرض الرسم البياني.</p>
+                ) : movementChartData.length === 0 ? (
+                  <p className="text-sm text-gray-500">الصنف المختار بلا حركة في الفترة الحالية.</p>
+                ) : (
+                  <div className="h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={movementChartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="label" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="incoming" name="وارد" stroke="#0ea5e9" />
+                        <Line type="monotone" dataKey="outgoing" name="إجمالي صادر" stroke="#ef4444" />
+                        <Line type="monotone" dataKey="sales" name="مبيعات" stroke="#22c55e" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
         {/* Expense summary */}
         <div className="bg-white shadow rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-800">إجمالي المصروفات (رواتب + مشتريات)</h2>
-          </div>
-          
+          </div>          
           <form onSubmit={handleApplyExpenses} className="grid gap-4 md:grid-cols-4">
             <div className="flex flex-col gap-1">
               <label className="text-sm font-medium text-gray-700">نوع الفترة</label>

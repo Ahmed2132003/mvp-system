@@ -397,7 +397,7 @@ def test_inventory_value_report_respects_sales_deductions(reporting_setup):
     store = reporting_setup["store"]
     branch = reporting_setup["branch"]
     items = reporting_setup["items"]
-
+    
     inventory_burger = Inventory.objects.create(
         item=items["burger"],
         branch=branch,
@@ -451,3 +451,108 @@ def test_inventory_value_report_respects_sales_deductions(reporting_setup):
     assert category_filter_response.status_code == 200
     filtered_payload = category_filter_response.json()
     assert filtered_payload["total_sale_value"] == 750.0  # burger only
+
+
+@pytest.mark.django_db
+def test_inventory_movements_report_handles_empty_items(reporting_setup, monkeypatch):
+    client = reporting_setup["client"]
+    items = reporting_setup["items"]
+
+    frozen_now = timezone.make_aware(datetime(2024, 7, 15, 12, 0))
+    monkeypatch.setattr(timezone, "now", lambda: frozen_now)
+
+    response = client.get(
+        "/api/v1/reports/inventory/movements/",
+        {"period_type": "month", "period_value": "2024-07"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["period_type"] == "month"
+    assert payload["period_value"] == "2024-07"
+    assert payload["days"] == 31
+
+    items_payload = {item["item_id"]: item for item in payload["items"]}
+    assert set(items_payload.keys()) == {
+        items["burger"].id,
+        items["pizza"].id,
+        items["salad"].id,
+    }
+
+    for item in items_payload.values():
+        assert item["incoming"] == 0
+        assert item["outgoing"] == 0
+        assert item["sales_quantity"] == 0
+        assert item["consumption_rate"] == 0
+        assert item["timeline"] == []
+
+
+@pytest.mark.django_db
+def test_inventory_movements_report_calculates_consumption_and_timeline(reporting_setup, monkeypatch):
+    client = reporting_setup["client"]
+    store = reporting_setup["store"]
+    branch = reporting_setup["branch"]
+    items = reporting_setup["items"]
+
+    frozen_now = timezone.make_aware(datetime(2024, 7, 31, 9, 0))
+    monkeypatch.setattr(timezone, "now", lambda: frozen_now)
+
+    # حركات وارد وصادر
+    movement = InventoryMovement.objects.create(
+        inventory=Inventory.objects.create(item=items["burger"], branch=branch, quantity=0, min_stock=0),
+        item=items["burger"],
+        branch=branch,
+        change=40,
+        movement_type="IN",
+    )
+    InventoryMovement.objects.filter(pk=movement.pk).update(
+        created_at=timezone.make_aware(datetime(2024, 7, 5, 10, 0))
+    )
+
+    out_movement = InventoryMovement.objects.create(
+        inventory=Inventory.objects.create(item=items["pizza"], branch=branch, quantity=0, min_stock=0),
+        item=items["pizza"],
+        branch=branch,
+        change=-5,
+        movement_type="OUT",
+    )
+    InventoryMovement.objects.filter(pk=out_movement.pk).update(
+        created_at=timezone.make_aware(datetime(2024, 7, 10, 8, 0))
+    )
+
+    # مبيعات مرتفعة للبائع Burger
+    for day in [1, 3, 7, 15, 20]:
+        created_at = timezone.make_aware(datetime(2024, 7, day, 14, 0))
+        create_order_with_items(
+            store,
+            branch,
+            created_at,
+            [
+                (items["burger"], 10),
+            ],
+        )
+
+    response = client.get(
+        "/api/v1/reports/inventory/movements/",
+        {"period_type": "month", "period_value": "2024-07"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    burger_data = next(item for item in payload["items"] if item["item_id"] == items["burger"].id)
+    pizza_data = next(item for item in payload["items"] if item["item_id"] == items["pizza"].id)
+    salad_data = next(item for item in payload["items"] if item["item_id"] == items["salad"].id)
+
+    assert burger_data["incoming"] == 40.0
+    assert burger_data["sales_quantity"] == 50.0
+    assert burger_data["total_outgoing"] == 50.0
+    assert burger_data["net_change"] == -10.0
+    assert burger_data["consumption_rate"] == pytest.approx(1.61, rel=1e-3)
+    assert len(burger_data["timeline"]) >= 1
+    labels = [row["label"] for row in burger_data["timeline"]]
+    assert any(label.startswith("2024-07-01") for label in labels)
+
+    assert pizza_data["outgoing"] == 5.0
+    assert pizza_data["consumption_rate"] == 0
+    assert salad_data["incoming"] == 0
+    assert salad_data["timeline"] == []
