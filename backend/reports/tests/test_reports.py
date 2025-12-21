@@ -12,7 +12,6 @@ from attendance.models import AttendanceLog
 from inventory.models import Category, Inventory, InventoryMovement, Item
 from orders.models import Order, OrderItem
 
-
 @pytest.fixture
 def reporting_setup(db):
     user = User.objects.create_user(
@@ -349,7 +348,7 @@ def test_expense_summary_daily_attendance_only(expense_setup):
 
 
 @pytest.mark.django_db
-def test_expense_summary_monthly_attendance_and_purchases(expense_setup):
+def test_expense_summary_monthly_attendance_and_purchases(expense_setup):    
     client = expense_setup["client"]
     employee = expense_setup["employee"]
     inventory = expense_setup["inventory"]
@@ -390,3 +389,65 @@ def test_expense_summary_monthly_attendance_and_purchases(expense_setup):
     assert payload["payroll_total"] == 200.0  # 2 days * 100
     assert payload["purchase_total"] == 250.0  # 10 * cost_price 25
     assert payload["total_expense"] == 450.0
+
+
+@pytest.mark.django_db
+def test_inventory_value_report_respects_sales_deductions(reporting_setup):
+    client = reporting_setup["client"]
+    store = reporting_setup["store"]
+    branch = reporting_setup["branch"]
+    items = reporting_setup["items"]
+
+    inventory_burger = Inventory.objects.create(
+        item=items["burger"],
+        branch=branch,
+        quantity=20,
+        min_stock=0,
+    )
+    inventory_pizza = Inventory.objects.create(
+        item=items["pizza"],
+        branch=branch,
+        quantity=10,
+        min_stock=0,
+    )
+
+    other_category = Category.objects.create(name="Drinks", store=store)
+    items["pizza"].category = other_category
+    items["pizza"].save()
+
+    order = Order.objects.create(
+        store=store,
+        branch=branch,
+        status="PENDING",
+        is_paid=False,
+    )
+    OrderItem.objects.create(order=order, item=items["burger"], quantity=5, unit_price=items["burger"].unit_price)
+    OrderItem.objects.create(order=order, item=items["pizza"], quantity=2, unit_price=items["pizza"].unit_price)
+
+    order.status = "READY"
+    order.save()
+
+    inventory_burger.refresh_from_db()
+    inventory_pizza.refresh_from_db()
+    assert inventory_burger.quantity == 15
+    assert inventory_pizza.quantity == 8
+
+    response = client.get("/api/v1/reports/inventory/value/")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["total_cost_value"] == 695.0  # (15 * 25) + (8 * 40)
+    assert payload["total_sale_value"] == 1390.0  # (15 * 50) + (8 * 80)
+    assert payload["total_margin"] == 695.0
+
+    items_payload = {item["item_id"]: item for item in payload["items"]}
+    assert items_payload[items["burger"].id]["quantity"] == 15
+    assert items_payload[items["pizza"].id]["quantity"] == 8
+
+    category_filter_response = client.get(
+        "/api/v1/reports/inventory/value/",
+        {"category": reporting_setup["items"]["burger"].category_id},
+    )
+    assert category_filter_response.status_code == 200
+    filtered_payload = category_filter_response.json()
+    assert filtered_payload["total_sale_value"] == 750.0  # burger only

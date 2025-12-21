@@ -1,5 +1,7 @@
 # backend/inventory/models.py
 from django.db import models
+from django.db.models import DecimalField, F, Sum, Value
+from django.db.models.functions import Coalesce
 
 class Category(models.Model):
     name = models.CharField(max_length=100)
@@ -46,6 +48,35 @@ class InventoryQuerySet(models.QuerySet):
     def active_items(self):
         return self.filter(item__is_active=True)
 
+    def with_value_totals(self):
+        """Annotate inventory rows with aggregated quantity and values per item."""
+        cost_expr = F('quantity') * Coalesce(
+            F('item__cost_price'),
+            Value(0),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
+        sale_expr = F('quantity') * Coalesce(
+            F('item__unit_price'),
+            Value(0),
+            output_field=DecimalField(max_digits=12, decimal_places=2),
+        )
+
+        return (
+            self.values('item_id', 'item__name', 'item__category_id', 'item__category__name')
+            .annotate(
+                total_quantity=Coalesce(Sum('quantity'), Value(0)),
+                total_cost_value=Coalesce(
+                    Sum(cost_expr),
+                    Value(0),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+                total_sale_value=Coalesce(
+                    Sum(sale_expr),
+                    Value(0),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )
+        )
 
 class InventoryManager(models.Manager):
     def get_queryset(self):
@@ -62,7 +93,10 @@ class InventoryManager(models.Manager):
 
     def needs_reorder(self, *args, **kwargs):
         return self.get_queryset().needs_reorder(*args, **kwargs)
-        
+
+    def with_value_totals(self, *args, **kwargs):
+        return self.get_queryset().with_value_totals(*args, **kwargs)
+            
 class Inventory(models.Model):
     item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name='inventory_entries')
     branch = models.ForeignKey('branches.Branch', on_delete=models.CASCADE, related_name='inventory')

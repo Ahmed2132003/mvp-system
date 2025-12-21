@@ -76,6 +76,13 @@ export default function Reports() {
   const [expenses, setExpenses] = useState(null);
   const [expenseLoading, setExpenseLoading] = useState(false);
   const [expenseError, setExpenseError] = useState(null);
+  const [inventoryValue, setInventoryValue] = useState(null);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [inventoryError, setInventoryError] = useState(null);
+  const [inventoryFilters, setInventoryFilters] = useState({
+    category: "",
+    branch: "",
+  });
 
   // Toast
   const [toast, setToast] = useState({
@@ -192,7 +199,7 @@ export default function Reports() {
     }
   };
 
-  const fetchExpenses = async () => {
+  const fetchExpenses = async () => {    
     try {
       setExpenseLoading(true);
       setExpenseError(null);
@@ -216,11 +223,33 @@ export default function Reports() {
     }
   };
 
+  const fetchInventoryValue = async () => {
+    try {
+      setInventoryLoading(true);
+      setInventoryError(null);
+
+      const params = {};
+      if (inventoryFilters.category) params.category = inventoryFilters.category;
+      if (inventoryFilters.branch) params.branch = inventoryFilters.branch;
+
+      const res = await api.get("/reports/inventory/value/", { params });
+      setInventoryValue(res.data);
+    } catch (err) {
+      console.error("خطأ في تحميل قيمة المخزون:", err);
+      const msg = "تعذر تحميل قيمة المخزون.";
+      setInventoryError(msg);
+      showToast(msg, "error");
+    } finally {
+      setInventoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchReport();
     fetchPeriodStats();
     fetchComparison();
     fetchExpenses();
+    fetchInventoryValue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -296,6 +325,11 @@ export default function Reports() {
     setExpenseFilters((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleInventoryFilterChange = (e) => {
+    const { name, value } = e.target;
+    setInventoryFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
   const handleApplyFilters = (e) => {
     e.preventDefault();
     fetchReport();
@@ -315,6 +349,11 @@ export default function Reports() {
   const handleApplyExpenses = (e) => {
     e.preventDefault();
     fetchExpenses();
+  };
+
+  const handleApplyInventoryFilters = (e) => {
+    e.preventDefault();
+    fetchInventoryValue();
   };
 
   const handleExportCsv = () => {
@@ -426,6 +465,13 @@ export default function Reports() {
       purchase_total: 0,
       total_expense: 0,
     };
+  const inventoryTotals =
+    inventoryValue || {
+      total_cost_value: 0,
+      total_sale_value: 0,
+      total_margin: 0,
+      items: [],
+    };
 
   const renderProductTable = (products) =>
     products.length === 0 ? (
@@ -523,12 +569,140 @@ export default function Reports() {
           </div>
         </form>
 
+        {/* Inventory value summary */}
+        <div className="bg-white shadow rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">قيمة المخزون</h2>
+          </div>
+          <form onSubmit={handleApplyInventoryFilters} className="grid gap-4 md:grid-cols-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">التصنيف (اختياري)</label>
+              <input
+                type="number"
+                name="category"
+                value={inventoryFilters.category}
+                onChange={handleInventoryFilterChange}
+                className="border rounded px-2 py-1 text-sm"
+                placeholder="ID التصنيف"
+                min="1"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium text-gray-700">الفرع (اختياري)</label>
+              <input
+                type="number"
+                name="branch"
+                value={inventoryFilters.branch}
+                onChange={handleInventoryFilterChange}
+                className="border rounded px-2 py-1 text-sm"
+                placeholder="ID الفرع"
+                min="1"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                تحديث قيمة المخزون
+              </button>
+            </div>
+          </form>
+
+          {inventoryLoading && <p className="mt-4 text-gray-600 text-sm">جاري تحميل قيمة المخزون...</p>}
+          {inventoryError && <p className="mt-4 text-red-600 text-sm">{inventoryError}</p>}
+
+          {!inventoryLoading && !inventoryError && (
+            <>
+              <div className="grid gap-4 md:grid-cols-3 mt-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">تكلفة الشراء</p>
+                  <p className="text-xl font-semibold text-gray-800">
+                    {inventoryTotals.total_cost_value?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    جنيه
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 mb-1">قيمة البيع المحتملة</p>
+                  <p className="text-xl font-semibold text-gray-800">
+                    {inventoryTotals.total_sale_value?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    جنيه
+                  </p>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-600 mb-1">هامش الربح المحتمل</p>
+                  <p className="text-xl font-bold text-blue-800">
+                    {inventoryTotals.total_margin?.toLocaleString("en-US", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}{" "}
+                    جنيه
+                  </p>
+                </div>
+              </div>
+
+              {inventoryTotals.items?.length > 0 && (
+                <div className="overflow-auto mt-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-right py-2">الصنف</th>
+                        <th className="text-right py-2">التصنيف</th>
+                        <th className="text-right py-2">الكمية المتاحة</th>
+                        <th className="text-right py-2">قيمة الشراء</th>
+                        <th className="text-right py-2">قيمة البيع</th>
+                        <th className="text-right py-2">الهامش</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inventoryTotals.items.map((item) => (
+                        <tr key={item.item_id} className="border-b last:border-0">
+                          <td className="py-2">{item.name}</td>
+                          <td className="py-2">{item.category_name || "بدون تصنيف"}</td>
+                          <td className="py-2">{item.quantity}</td>
+                          <td className="py-2">
+                            {item.cost_value?.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            جنيه
+                          </td>
+                          <td className="py-2">
+                            {item.sale_value?.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            جنيه
+                          </td>
+                          <td className="py-2">
+                            {item.margin?.toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            جنيه
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
         {/* Expense summary */}
         <div className="bg-white shadow rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-800">إجمالي المصروفات (رواتب + مشتريات)</h2>
           </div>
-
+          
           <form onSubmit={handleApplyExpenses} className="grid gap-4 md:grid-cols-4">
             <div className="flex flex-col gap-1">
               <label className="text-sm font-medium text-gray-700">نوع الفترة</label>

@@ -18,7 +18,7 @@ from inventory.models import Inventory, InventoryMovement
 from orders.models import Order, OrderItem, Payment
 from attendance.models import AttendanceLog
 from core.models import Employee
-
+from core.utils.store_context import get_branch_from_request, get_store_from_request
 
 def _empty_summary():
     return {
@@ -797,3 +797,85 @@ def api_accounting(request):
         "net_out": net_out,
         "generated_at": timezone.now(),
     })
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def inventory_value_report(request):
+    """
+    إجمالي قيمة المخزون (تكلفة الشراء وقيمة البيع المتوقعة) مع دعم ترشيح:
+    - store (ضمنيًا من المستخدم أو store_id)
+    - branch (branch / branch_id)
+    - category
+    """
+    try:
+        store = get_store_from_request(request)
+        if not store:
+            return Response(
+                {
+                    "total_cost_value": 0.0,
+                    "total_sale_value": 0.0,
+                    "total_margin": 0.0,
+                    "items": [],
+                }
+            )
+
+        qs = Inventory.objects.select_related("item", "branch").for_store(store)
+
+        branch = get_branch_from_request(request, store=store)
+        if branch:
+            qs = qs.filter(branch=branch)
+
+        category_id = request.query_params.get("category")
+        if category_id:
+            qs = qs.filter(item__category_id=category_id)
+
+        annotated = qs.with_value_totals()
+
+        totals = annotated.aggregate(
+            total_cost=Coalesce(
+                Sum("total_cost_value"),
+                Value(0),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            ),
+            total_sale=Coalesce(
+                Sum("total_sale_value"),
+                Value(0),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            ),
+        )
+
+        items_payload = [
+            {
+                "item_id": row["item_id"],
+                "name": row["item__name"],
+                "category_id": row["item__category_id"],
+                "category_name": row["item__category__name"],
+                "quantity": row["total_quantity"],
+                "cost_value": float(row["total_cost_value"] or 0),
+                "sale_value": float(row["total_sale_value"] or 0),
+                "margin": float((row["total_sale_value"] or 0) - (row["total_cost_value"] or 0)),
+            }
+            for row in annotated
+        ]
+
+        total_cost = totals["total_cost"] or 0
+        total_sale = totals["total_sale"] or 0
+
+        return Response(
+            {
+                "total_cost_value": float(total_cost),
+                "total_sale_value": float(total_sale),
+                "total_margin": float(total_sale - total_cost),
+                "items": items_payload,
+            }
+        )
+    except (ProgrammingError, OperationalError) as e:
+        print("Inventory value report DB error:", e)
+        return Response(
+            {
+                "total_cost_value": 0.0,
+                "total_sale_value": 0.0,
+                "total_margin": 0.0,
+                "items": [],
+            }
+        )
