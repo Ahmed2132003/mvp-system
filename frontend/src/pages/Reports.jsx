@@ -726,7 +726,7 @@ export default function Reports() {
   // =====================
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 dark:text-gray-50">
-      <div className="flex min-h-screen">
+      <div className="flex min-h-screen">     
         {/* Sidebar - Desktop */}
         <aside className="hidden md:flex w-64 flex-col bg-white border-l border-gray-200 shadow-sm dark:bg-slate-900 dark:border-slate-800">
           <div className="px-6 py-5 border-b dark:border-slate-800">
@@ -1037,8 +1037,8 @@ export default function Reports() {
                       </p>
                     ) : (
                       <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={series}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256}>
+                          <LineChart data={series}>                         
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="date" />
                             <YAxis />
@@ -1068,8 +1068,8 @@ export default function Reports() {
                       </p>
                     ) : (
                       <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={topItems}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256}>
+                          <BarChart data={topItems}>                            
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="name" />
                             <YAxis />
@@ -1096,8 +1096,8 @@ export default function Reports() {
                       </p>
                     ) : (
                       <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256}>
+                          <PieChart>                          
                             <Pie data={paymentBreakdown} dataKey="amount" nameKey="gateway" outerRadius={80} label>
                               {paymentBreakdown.map((_, index) => (
                                 <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
@@ -1495,8 +1495,8 @@ export default function Reports() {
                     </p>
                   ) : (
                     <div className="h-72">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={movementChartData}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={288}>
+                        <LineChart data={movementChartData}>                          
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="label" />
                           <YAxis />
@@ -1748,8 +1748,8 @@ export default function Reports() {
                       </p>
                     ) : (
                       <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={periodData.top_products}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256}>
+                          <BarChart data={periodData.top_products}>                            
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis dataKey="name" />
                             <YAxis />
@@ -1968,8 +1968,8 @@ export default function Reports() {
                       {isAr ? "مقارنة المؤشرات الرئيسية" : "KPI comparison"}
                     </h4>
                     <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={comparisonChartData}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256}>
+                        <BarChart data={comparisonChartData}>                          
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="name" />
                           <YAxis />
