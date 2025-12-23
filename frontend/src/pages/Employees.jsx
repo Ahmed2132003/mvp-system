@@ -146,12 +146,14 @@ export default function Employees() {
         try {
           setLoading(true);
           const res = await api.get('/employees/me/');
-          navigate(`/employees/${res.data.id}`, { replace: true });
+          const employeeId = res.data?.id;
+          const destination = employeeId ? `/employees/${employeeId}` : '/employees/me';
+          navigate(destination, { replace: true });
         } catch (err) {
           console.error(err);
           notifyError(isAr ? 'لا يمكن تحميل ملفك الشخصي' : 'Unable to load your profile');
         } finally {
-          setLoading(false);
+          setLoading(false);          
         }
         return;
       }
