@@ -244,6 +244,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             for log in logs
         ])
 
+    @action(detail=True, methods=["get"])
     def payrolls(self, request, pk=None):
         employee = self.get_object()
         payrolls = PayrollPeriod.objects.filter(employee=employee)
@@ -263,7 +264,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             }
             for p in payrolls
         ])
-        
+                
     @action(detail=True, methods=['post'])
     def generate_payroll(self, request, pk=None):
         month = request.data.get('month')
