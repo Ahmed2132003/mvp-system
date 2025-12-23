@@ -340,7 +340,7 @@ class PayrollPeriod(models.Model):
     employee = models.ForeignKey("core.Employee", on_delete=models.CASCADE, related_name="payrolls")
 
     month = models.DateField(help_text="أول يوم في الشهر")
-
+    
     base_salary = models.DecimalField(max_digits=10, decimal_places=2)
     total_work_minutes = models.PositiveIntegerField(default=0)
     total_late_minutes = models.PositiveIntegerField(default=0)
@@ -352,8 +352,17 @@ class PayrollPeriod(models.Model):
     net_salary = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, editable=False)
 
     is_locked = models.BooleanField(default=False)
+    is_paid = models.BooleanField(default=False)
+    paid_at = models.DateField(null=True, blank=True)
+    paid_by = models.ForeignKey(
+        "core.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="marked_payrolls",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
-
+    
     class Meta:
         unique_together = ("employee", "month")
         ordering = ["-month"]
@@ -366,6 +375,14 @@ class PayrollPeriod(models.Model):
         self.is_locked = True
         self.save(update_fields=["net_salary", "is_locked"])
 
+    def mark_paid(self, by_user=None, paid_date=None):
+        self.calculate_net_salary()
+        self.is_paid = True
+        self.paid_at = paid_date or timezone.localdate()
+        if by_user:
+            self.paid_by = by_user
+        self.save(update_fields=["net_salary", "is_paid", "paid_at", "paid_by"])
+        
     def __str__(self):
         return f"{self.employee} - {self.month.strftime('%Y-%m')}"
 

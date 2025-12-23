@@ -25,6 +25,8 @@ from core.serializers.user import UserSerializer
 from core.permissions import IsManager, IsOwner
 from core.services.payroll import generate_payroll
 
+import calendar
+
 
 # =========================
 # Auth & User
@@ -210,12 +212,31 @@ class EmployeeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def attendance(self, request, pk=None):
         employee = self.get_object()
-        logs = AttendanceLog.objects.filter(employee=employee).order_by("-check_in")
+        month_param = request.query_params.get("month")
+        logs = AttendanceLog.objects.filter(employee=employee)
+
+        # ✅ Default to current month for a cleaner monthly view
+        if month_param:
+            try:
+                # month_param can be YYYY-MM or YYYY-MM-DD
+                parts = [int(p) for p in month_param.split("-")]
+                year = parts[0]
+                month = parts[1] if len(parts) > 1 else timezone.localdate().month
+                start_date = timezone.datetime(year, month, 1).date()
+            except Exception:
+                start_date = timezone.localdate().replace(day=1)
+        else:
+            start_date = timezone.localdate().replace(day=1)
+
+        last_day = calendar.monthrange(start_date.year, start_date.month)[1]
+        end_date = start_date.replace(day=last_day)
+
+        logs = logs.filter(check_in__date__gte=start_date, check_in__date__lte=end_date).order_by("-check_in")
         return Response([
             {
                 "work_date": getattr(log, "work_date", None),                
                 "check_in": log.check_in,
-                "check_out": log.check_out,
+                "check_out": log.check_out,                
                 "late_minutes": log.late_minutes,
                 "penalty": log.penalty_applied,
                 "duration": log.duration_minutes,
@@ -223,7 +244,6 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             for log in logs
         ])
 
-    @action(detail=True, methods=['get'])
     def payrolls(self, request, pk=None):
         employee = self.get_object()
         payrolls = PayrollPeriod.objects.filter(employee=employee)
@@ -237,10 +257,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 "advances": p.advances,
                 "net_salary": p.net_salary,
                 "is_locked": p.is_locked,
+                "is_paid": p.is_paid,
+                "paid_at": p.paid_at,
+                "paid_by": p.paid_by_id,
             }
             for p in payrolls
         ])
-
+        
     @action(detail=True, methods=['post'])
     def generate_payroll(self, request, pk=None):
         month = request.data.get('month')
@@ -256,23 +279,145 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             "id": payroll.id,
             "month": payroll.month,
             "net_salary": payroll.net_salary,
-            "is_locked": payroll.is_locked
+            "is_locked": payroll.is_locked,
+            "is_paid": payroll.is_paid,
+            "paid_at": payroll.paid_at,
+            "paid_by": payroll.paid_by_id,
         })
+
+    @action(detail=True, methods=['post'])
+    def mark_paid(self, request, pk=None):
+        payroll_id = request.data.get("payroll_id")
+        target_month = request.data.get("month")
+        employee = self.get_object()
+
+        payroll = None
+        if payroll_id:
+            payroll = PayrollPeriod.objects.filter(id=payroll_id, employee=employee).first()
+        elif target_month:
+            try:
+                parts = [int(p) for p in target_month.split("-")]
+                year = parts[0]
+                month = parts[1] if len(parts) > 1 else timezone.localdate().month
+                month_date = timezone.datetime(year, month, 1).date()
+                payroll = PayrollPeriod.objects.filter(employee=employee, month=month_date).first()
+            except Exception:
+                payroll = None
+        else:
+            current_start = timezone.localdate().replace(day=1)
+            payroll = PayrollPeriod.objects.filter(employee=employee, month=current_start).first()
+
+        if not payroll:
+            return Response({"detail": "لا يوجد كشف رواتب للشهر المحدد."}, status=404)
+
+        payroll.mark_paid(by_user=request.user)
+        EmployeeLedger.objects.get_or_create(
+            employee=employee,
+            payroll=payroll,
+            entry_type="SALARY",
+            payout_date=payroll.paid_at or timezone.localdate(),
+            defaults={
+                "amount": payroll.net_salary,
+                "description": f"Salary paid for {payroll.month.strftime('%Y-%m')}",
+            },
+        )
+
+        return Response(
+            {
+                "id": payroll.id,
+                "month": payroll.month,
+                "is_paid": payroll.is_paid,
+                "paid_at": payroll.paid_at,
+                "paid_by": payroll.paid_by_id,
+                "net_salary": payroll.net_salary,
+            }
+        )
+
+    @action(detail=True, methods=["post"])
+    def ledger_entry(self, request, pk=None):
+        """
+        ✅ Add bonus/penalty/advance entry for the employee.
+        """
+        employee = self.get_object()
+        entry_type = request.data.get("entry_type")
+        amount = request.data.get("amount")
+        description = request.data.get("description", "")
+        payout_date = request.data.get("payout_date")
+
+        if entry_type not in ["BONUS", "PENALTY", "ADVANCE"]:
+            return Response({"detail": "نوع الحركة غير مدعوم."}, status=400)
+
+        try:
+            amount_value = float(amount)
+        except (TypeError, ValueError):
+            return Response({"detail": "قيمة غير صالحة."}, status=400)
+
+        if amount_value <= 0:
+            return Response({"detail": "يجب أن تكون القيمة أكبر من صفر."}, status=400)
+
+        if payout_date:
+            try:
+                payout_date = timezone.datetime.strptime(payout_date, "%Y-%m-%d").date()
+            except Exception:
+                return Response({"detail": "تنسيق التاريخ غير صحيح."}, status=400)
+        else:
+            payout_date = timezone.localdate()
+
+        entry = EmployeeLedger.objects.create(
+            employee=employee,
+            entry_type=entry_type,
+            amount=amount_value,
+            description=description,
+            payout_date=payout_date,
+        )
+
+        if entry_type == "ADVANCE":
+            employee.advances = (employee.advances or 0) + amount_value
+            employee.save(update_fields=["advances"])
+
+        return Response(
+            {
+                "type": entry.entry_type,
+                "amount": entry.amount,
+                "description": entry.description,
+                "created_at": entry.created_at,
+                "payout_date": entry.payout_date,
+            },
+            status=201,
+        )
 
     @action(detail=True, methods=['get'])
     def ledger(self, request, pk=None):
         employee = self.get_object()
+        month_param = request.query_params.get("month")
         entries = EmployeeLedger.objects.filter(employee=employee)
+
+        if month_param:
+            try:
+                parts = [int(p) for p in month_param.split("-")]
+                year = parts[0]
+                month = parts[1] if len(parts) > 1 else timezone.localdate().month
+                start_date = timezone.datetime(year, month, 1).date()
+            except Exception:
+                start_date = timezone.localdate().replace(day=1)
+        else:
+            start_date = timezone.localdate().replace(day=1)
+
+        last_day = calendar.monthrange(start_date.year, start_date.month)[1]
+        end_date = start_date.replace(day=last_day)
+
+        entries = entries.filter(payout_date__gte=start_date, payout_date__lte=end_date)
         return Response([
             {
                 "type": e.entry_type,                
                 "amount": e.amount,
                 "description": e.description,
                 "created_at": e.created_at,
+                "payout_date": e.payout_date,
             }
             for e in entries
         ])
-
+        
     @action(detail=False, methods=['get'])
     def attendance_qr_list(self, request):
         """

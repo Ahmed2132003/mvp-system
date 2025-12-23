@@ -8,84 +8,95 @@ import { useAuth } from '../hooks/useAuth';
 // Sidebar Navigation (Same style as Dashboard)
 // =====================
 function SidebarNav({ lang }) {
+  const { user } = useAuth();
   const isAr = lang === 'ar';
+  const canManageNav = user?.is_superuser || ['OWNER', 'MANAGER'].includes(user?.role);
 
   return (
     <>
-      <Link
-        to="/dashboard"
-        className="flex items-center justify-between px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        <span>{isAr ? 'الداشبورد' : 'Dashboard'}</span>
-      </Link>
+      {canManageNav && (
+        <>
+          <Link
+            to="/dashboard"
+            className="flex items-center justify-between px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            <span>{isAr ? 'الداشبورد' : 'Dashboard'}</span>
+          </Link>
 
-      <Link
-        to="/pos"
-        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'شاشة الكاشير (POS)' : 'Cashier Screen (POS)'}
-      </Link>
-      <Link
-        to="/inventory"
-        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'إدارة المخزون' : 'Inventory Management'}
-      </Link>
-      <Link
-        to="/attendance"
-        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'الحضور والانصراف' : 'Attendance'}
-      </Link>
-      <Link
-        to="/reservations"
-        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'الحجوزات' : 'Reservations'}
-      </Link>
-      <Link
-        to="/reports"
-        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'التقارير' : 'Reports'}
-      </Link>
-      <Link
-        to="/settings"
-        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'الإعدادات' : 'Settings'}
-      </Link>
+          <Link
+            to="/pos"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'شاشة الكاشير (POS)' : 'Cashier Screen (POS)'}
+          </Link>
+          <Link
+            to="/inventory"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'إدارة المخزون' : 'Inventory Management'}
+          </Link>
+          <Link
+            to="/attendance"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'الحضور والانصراف' : 'Attendance'}
+          </Link>
+          <Link
+            to="/reservations"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'الحجوزات' : 'Reservations'}
+          </Link>
+          <Link
+            to="/reports"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'التقارير' : 'Reports'}
+          </Link>
+          <Link
+            to="/settings"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'الإعدادات' : 'Settings'}
+          </Link>
 
-      <Link
-        to="/employees"
-        className="flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-      >
-        <span>{isAr ? 'الموظفين' : 'Employees'}</span>
-        <span className="text-xs bg-blue-100 px-2 py-0.5 rounded-full dark:bg-blue-800/70">
-          {isAr ? 'الآن' : 'Now'}
-        </span>
-      </Link>
+          <Link
+            to="/employees"
+            className="flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
+          >
+            <span>{isAr ? 'الموظفين' : 'Employees'}</span>
+            <span className="text-xs bg-blue-100 px-2 py-0.5 rounded-full dark:bg-blue-800/70">
+              {isAr ? 'الآن' : 'Now'}
+            </span>
+          </Link>
 
-      <Link
-        to="/accounting"
-        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'الحسابات' : 'Accounting'}
-      </Link>
+          <Link
+            to="/accounting"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'الحسابات' : 'Accounting'}
+          </Link>
 
-      <Link
-        to="/users/create"
-        className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'إدارة المستخدمين' : 'User Management'}
-      </Link>
+          <Link
+            to="/users/create"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'إدارة المستخدمين' : 'User Management'}
+          </Link>
+        </>
+      )}
 
-      <button
-        type="button"
-        className="w-full text-right flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'التقارير' : 'Reports (Soon)'}
-      </button>
+      {!canManageNav && (
+        <Link
+          to="/employees/me"
+          className="flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
+        >
+          <span>{isAr ? 'ملفي' : 'My Profile'}</span>
+          <span className="text-xs bg-blue-100 px-2 py-0.5 rounded-full dark:bg-blue-800/70">
+            {isAr ? 'الآن' : 'Now'}
+          </span>
+        </Link>
+      )}
     </>
   );
 }
@@ -111,6 +122,7 @@ export default function EmployeeProfile() {
 
   const [activeTab, setActiveTab] = useState('info');
   const [employee, setEmployee] = useState(null);
+  const [employeeId, setEmployeeId] = useState(id);
   const [attendance, setAttendance] = useState([]);
   const [payrolls, setPayrolls] = useState([]);
   const [ledger, setLedger] = useState([]);
@@ -127,10 +139,23 @@ export default function EmployeeProfile() {
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [ledgerForm, setLedgerForm] = useState({
+    entry_type: 'BONUS',
+    amount: '',
+    description: '',
+    payout_date: '',
+  });
+  const [ledgerSaving, setLedgerSaving] = useState(false);
+  const [markingPayrollId, setMarkingPayrollId] = useState(null);
 
   const canManage = user?.is_superuser || ['OWNER', 'MANAGER'].includes(user?.role);
 
   const numberFormatter = useMemo(() => new Intl.NumberFormat(isAr ? 'ar-EG' : 'en-EG'), [isAr]);
+
+  useEffect(() => {
+    setEmployeeId(id);
+  }, [id]);
 
   // Apply theme to <html> + persist
   useEffect(() => {
@@ -151,8 +176,12 @@ export default function EmployeeProfile() {
 
   const fetchEmployee = useCallback(async () => {
     try {
-      const res = await api.get(`/employees/${id}/`);
+      const endpoint = id === 'me' ? '/employees/me/' : `/employees/${employeeId || id}/`;
+      const res = await api.get(endpoint);
       setEmployee(res.data);
+      if (res.data?.id) {
+        setEmployeeId(res.data.id);
+      }
       setEditData({
         salary: res.data.salary ?? '',
         advances: res.data.advances ?? '',
@@ -163,22 +192,29 @@ export default function EmployeeProfile() {
     } catch {
       notifyError(isAr ? 'فشل تحميل بيانات الموظف' : 'Failed to load employee data');
     }
-  }, [id, isAr]);
+  }, [id, employeeId, isAr]);
 
   const fetchAttendance = useCallback(async () => {
-    const res = await api.get(`/employees/${id}/attendance/`);
+    if (!employeeId) return;
+    const res = await api.get(`/employees/${employeeId}/attendance/`, {
+      params: { month: selectedMonth },
+    });
     setAttendance(res.data);
-  }, [id]);
+  }, [employeeId, selectedMonth]);
 
   const fetchPayrolls = useCallback(async () => {
-    const res = await api.get(`/employees/${id}/payrolls/`);
+    if (!employeeId) return;
+    const res = await api.get(`/employees/${employeeId}/payrolls/`);
     setPayrolls(res.data);
-  }, [id]);
+  }, [employeeId]);
 
   const fetchLedger = useCallback(async () => {
-    const res = await api.get(`/employees/${id}/ledger/`);
+    if (!employeeId) return;
+    const res = await api.get(`/employees/${employeeId}/ledger/`, {
+      params: { month: selectedMonth },
+    });
     setLedger(res.data);
-  }, [id]);
+  }, [employeeId, selectedMonth]);
 
   const fetchStores = useCallback(async () => {
     try {
@@ -189,34 +225,31 @@ export default function EmployeeProfile() {
     }
   }, []);
 
-  const fetchBranches = useCallback(
-    async (storeId) => {
-      if (!storeId) {
-        setBranches([]);
-        setEditData((prev) => ({ ...prev, branch: null }));
-        return;
-      }
+  const fetchBranches = useCallback(async (storeId) => {
+    if (!storeId) {
+      setBranches([]);
+      setEditData((prev) => ({ ...prev, branch: null }));
+      return;
+    }
 
-      try {
-        setBranchesLoading(true);
-        const res = await api.get('/branches/', { params: { store_id: storeId } });
-        const results = Array.isArray(res.data) ? res.data : res.data.results || [];
-        setBranches(results);
+    try {
+      setBranchesLoading(true);
+      const res = await api.get('/branches/', { params: { store_id: storeId } });
+      const results = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setBranches(results);
 
-        setEditData((prev) => {
-          if (prev.branch && results.some((b) => b.id === prev.branch)) {
-            return prev;
-          }
-          return { ...prev, branch: results[0]?.id || null };
-        });
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setBranchesLoading(false);
-      }
-    },
-    []
-  );
+      setEditData((prev) => {
+        if (prev.branch && results.some((b) => b.id === prev.branch)) {
+          return prev;
+        }
+        return { ...prev, branch: results[0]?.id || null };
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBranchesLoading(false);
+    }
+  }, []);
 
   const generatePayroll = async () => {
     try {
@@ -231,10 +264,54 @@ export default function EmployeeProfile() {
     }
   };
 
+  const markPayrollPaid = async (payrollId) => {
+    if (!employeeId) return;
+    try {
+      setMarkingPayrollId(payrollId);
+      await api.post(`/employees/${employeeId}/mark_paid/`, { payroll_id: payrollId });
+      notifySuccess(isAr ? 'تم تعليم المرتب كمدفوع' : 'Marked payroll as paid');
+      fetchPayrolls();
+      fetchLedger();
+    } catch {
+      notifyError(isAr ? 'تعذر تعليم المرتب كمدفوع' : 'Failed to mark payroll as paid');
+    } finally {
+      setMarkingPayrollId(null);
+    }
+  };
+
+  const addLedgerEntry = async () => {
+    if (!employeeId) return;
+    if (!ledgerForm.amount) {
+      notifyError(isAr ? 'من فضلك أدخل قيمة صحيحة' : 'Please enter a valid amount');
+      return;
+    }
+    try {
+      setLedgerSaving(true);
+      await api.post(`/employees/${employeeId}/ledger_entry/`, {
+        ...ledgerForm,
+      });
+      notifySuccess(isAr ? 'تم تسجيل الحركة' : 'Entry added');
+      setLedgerForm({ entry_type: 'BONUS', amount: '', description: '', payout_date: '' });
+      fetchLedger();
+      fetchPayrolls();
+    } catch (err) {
+      console.error(err);
+      notifyError(isAr ? 'تعذر حفظ الحركة' : 'Failed to save entry');
+    } finally {
+      setLedgerSaving(false);
+    }
+  };
+
   useEffect(() => {
     fetchEmployee().finally(() => setLoading(false));
     fetchStores();
   }, [fetchEmployee, fetchStores]);
+
+  useEffect(() => {
+    fetchAttendance();
+    fetchLedger();
+    fetchPayrolls();
+  }, [fetchAttendance, fetchLedger, fetchPayrolls]);
 
   useEffect(() => {
     fetchBranches(editData.store);
@@ -250,14 +327,28 @@ export default function EmployeeProfile() {
     const totalDays = attendance.length;
     const totalLate = attendance.reduce((acc, a) => acc + (a.late_minutes || 0), 0);
     const totalPenalties = attendance.reduce((acc, a) => acc + (a.penalty || 0), 0);
-    const missingCheckouts = attendance.filter(a => !a.check_out).length;
+    const missingCheckouts = attendance.filter((a) => !a.check_out).length;
     const latestPayroll = [...payrolls].sort((a, b) => new Date(b.month) - new Date(a.month))[0];
+    const currentPayroll = payrolls.find((p) => (p.month || '').startsWith(selectedMonth));
     const netSalary =
+      currentPayroll?.net_salary ??
       latestPayroll?.net_salary ??
       Math.max((employee?.salary || 0) - totalPenalties - (employee?.advances || 0), 0);
 
     return { totalDays, totalLate, totalPenalties, missingCheckouts, netSalary };
-  }, [attendance, payrolls, employee]);
+  }, [attendance, payrolls, employee, selectedMonth]);
+
+  const ledgerTotals = useMemo(() => {
+    return ledger.reduce(
+      (acc, entry) => {
+        if (entry.type === 'BONUS') acc.bonus += Number(entry.amount || 0);
+        if (entry.type === 'PENALTY') acc.penalty += Number(entry.amount || 0);
+        if (entry.type === 'ADVANCE') acc.advance += Number(entry.amount || 0);
+        return acc;
+      },
+      { bonus: 0, penalty: 0, advance: 0 }
+    );
+  }, [ledger]);
 
   const updateEmployee = async () => {
     try {
@@ -268,7 +359,7 @@ export default function EmployeeProfile() {
         hire_date: editData.hire_date || null,
         store: editData.store || null,
         branch: editData.branch || null,
-      });      
+      });
       notifySuccess(isAr ? 'تم تحديث بيانات الموظف' : 'Employee updated');
       fetchEmployee();
     } catch (err) {
@@ -280,7 +371,8 @@ export default function EmployeeProfile() {
   };
 
   const terminateEmployee = async () => {
-    if (!window.confirm(isAr ? 'هل أنت متأكد من فصل هذا الموظف؟' : 'Are you sure you want to terminate this employee?')) return;
+    if (!window.confirm(isAr ? 'هل أنت متأكد من فصل هذا الموظف؟' : 'Are you sure you want to terminate this employee?'))
+      return;
 
     try {
       setDeleting(true);
@@ -295,7 +387,7 @@ export default function EmployeeProfile() {
     }
   };
 
-  const toggleTheme = () => setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
+  const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   const setLanguage = (lng) => setLang(lng);
 
   const moneyLabel = isAr ? 'ج.م' : 'EGP';
@@ -329,9 +421,7 @@ export default function EmployeeProfile() {
               <div className="px-4 py-4 border-b flex items-center justify-between dark:border-slate-800">
                 <div>
                   <h2 className="text-base font-bold text-primary dark:text-blue-300">MVP POS</h2>
-                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
-                    {isAr ? 'القائمة الرئيسية' : 'Main Menu'}
-                  </p>
+                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">{isAr ? 'القائمة الرئيسية' : 'Main Menu'}</p>
                 </div>
                 <button
                   type="button"
@@ -373,9 +463,7 @@ export default function EmployeeProfile() {
               </button>
 
               <div>
-                <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-gray-50">
-                  {isAr ? 'ملف الموظف' : 'Employee Profile'}
-                </h2>
+                <h2 className="text-lg md:text-2xl font-bold text-gray-900 dark:text-gray-50">{isAr ? 'ملف الموظف' : 'Employee Profile'}</h2>
                 <p className="text-xs md:text-sm text-gray-500 mt-1 dark:text-gray-400">
                   {isAr ? 'متابعة البيانات والحضور والمرتبات والحركات المالية' : 'View info, attendance, payroll, and ledger'}
                 </p>
@@ -388,18 +476,14 @@ export default function EmployeeProfile() {
                 <button
                   type="button"
                   onClick={() => setLanguage('en')}
-                  className={`px-2 py-1 ${
-                    !isAr ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900' : 'text-gray-600 dark:text-gray-300'
-                  }`}
+                  className={`px-2 py-1 ${!isAr ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900' : 'text-gray-600 dark:text-gray-300'}`}
                 >
                   EN
                 </button>
                 <button
                   type="button"
                   onClick={() => setLanguage('ar')}
-                  className={`px-2 py-1 ${
-                    isAr ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900' : 'text-gray-600 dark:text-gray-300'
-                  }`}
+                  className={`px-2 py-1 ${isAr ? 'bg-gray-900 text-white dark:bg-gray-50 dark:text-gray-900' : 'text-gray-600 dark:text-gray-300'}`}
                 >
                   AR
                 </button>
@@ -458,16 +542,14 @@ export default function EmployeeProfile() {
                         {employee.user?.name?.[0]?.toUpperCase() || employee.user?.email?.[0]?.toUpperCase() || 'E'}
                       </div>
                       <div>
-                        <h1 className="text-lg md:text-xl font-bold text-gray-900 dark:text-gray-50">
-                          {employee.user?.name}
-                        </h1>
+                        <h1 className="text-lg md:text-xl font-bold text-gray-900 dark:text-gray-50">{employee.user?.name}</h1>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{employee.user?.email}</p>
                       </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-                        {isAr ? 'الفرع:' : 'Branch:'} {employee.store_name || (isAr ? '—' : '—')}
+                        {isAr ? 'الفرع:' : 'Branch:'} {employee.store_name || '—'}
                       </span>
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-gray-200">
                         {isAr ? 'ID:' : 'ID:'} {id}
@@ -477,49 +559,47 @@ export default function EmployeeProfile() {
                 </section>
 
                 {/* KPI Summary */}
-                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {isAr ? 'أيام الحضور' : 'Attendance Days'}
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
-                      {numberFormatter.format(attendanceStats.totalDays)}
-                    </p>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'أيام الحضور' : 'Attendance Days'}</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">{numberFormatter.format(attendanceStats.totalDays)}</p>
                   </div>
 
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {isAr ? 'سجلات بدون انصراف' : 'Missing Check-outs'}
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
-                      {numberFormatter.format(attendanceStats.missingCheckouts)}
-                    </p>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'سجلات بدون انصراف' : 'Missing Check-outs'}</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">{numberFormatter.format(attendanceStats.missingCheckouts)}</p>
                   </div>
 
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {isAr ? 'إجمالي التأخير (دقيقة)' : 'Total Late (min)'}
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
-                      {numberFormatter.format(attendanceStats.totalLate)}
-                    </p>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'إجمالي التأخير (دقيقة)' : 'Total Late (min)'}</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">{numberFormatter.format(attendanceStats.totalLate)}</p>
                   </div>
 
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {isAr ? 'إجمالي الجزاءات' : 'Total Penalties'}
-                    </p>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'إجمالي الجزاءات' : 'Total Penalties'}</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
                       {numberFormatter.format(attendanceStats.totalPenalties)} {moneyLabel}
                     </p>
                   </div>
 
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                      {isAr ? 'المرتب المستحق' : 'Net Due Salary'}
-                    </p>
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'المرتب المستحق' : 'Net Due Salary'}</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
                       {numberFormatter.format(attendanceStats.netSalary)} {moneyLabel}
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'إجمالي الحوافز (الشهر)' : 'Monthly Bonuses'}</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
+                      {numberFormatter.format(ledgerTotals.bonus)} {moneyLabel}
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'إجمالي الخصومات (الشهر)' : 'Monthly Deductions'}</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
+                      {numberFormatter.format(ledgerTotals.penalty)} {moneyLabel}
                     </p>
                   </div>
                 </section>
@@ -527,7 +607,7 @@ export default function EmployeeProfile() {
                 {/* Tabs */}
                 <section className="bg-white rounded-2xl shadow-sm border border-gray-100 dark:bg-slate-900 dark:border-slate-800">
                   <div className="flex flex-wrap gap-2 border-b border-gray-100 p-3 dark:border-slate-800">
-                    {tabs.map(tab => (
+                    {tabs.map((tab) => (
                       <button
                         key={tab.key}
                         onClick={() => setActiveTab(tab.key)}
@@ -548,71 +628,63 @@ export default function EmployeeProfile() {
                       <div className="space-y-6">
                         <div className="grid gap-4 lg:grid-cols-3">
                           <div className="bg-gray-50/60 border border-gray-100 rounded-2xl p-4 dark:bg-slate-800/60 dark:border-slate-700">
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-3">
-                              {isAr ? 'البيانات' : 'Details'}
-                            </h3>
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-3">{isAr ? 'البيانات' : 'Details'}</h3>
                             <div className="space-y-2 text-sm">
                               <p className="text-gray-700 dark:text-gray-200">
-                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الاسم:' : 'Name:'}</b>{' '}
-                                {employee.user?.name}
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الاسم:' : 'Name:'}</b> {employee.user?.name}
                               </p>
                               <p className="text-gray-700 dark:text-gray-200">
-                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الإيميل:' : 'Email:'}</b>{' '}
-                                {employee.user?.email}
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الإيميل:' : 'Email:'}</b> {employee.user?.email}
                               </p>
                               <p className="text-gray-700 dark:text-gray-200">
-                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الهاتف:' : 'Phone:'}</b>{' '}
-                                {employee.user?.phone || '—'}
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الهاتف:' : 'Phone:'}</b> {employee.user?.phone || '—'}
                               </p>
                               <p className="text-gray-700 dark:text-gray-200">
-                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الفرع:' : 'Branch:'}</b>{' '}
-                                {employee.store_name || '—'}
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الفرع:' : 'Branch:'}</b> {employee.store_name || '—'}
                               </p>
                             </div>
                           </div>
 
+                          {/* ✅ FIXED: Financial card closing tags */}
                           <div className="bg-gray-50/60 border border-gray-100 rounded-2xl p-4 dark:bg-slate-800/60 dark:border-slate-700">
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-3">
-                              {isAr ? 'الماليات' : 'Financial'}
-                            </h3>
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-3">{isAr ? 'الماليات' : 'Financial'}</h3>
                             <div className="space-y-2 text-sm">
                               <p className="text-gray-700 dark:text-gray-200">
-                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الراتب:' : 'Salary:'}</b>{' '}
-                                {numberFormatter.format(employee.salary || 0)} {moneyLabel}
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'الراتب:' : 'Salary:'}</b> {numberFormatter.format(employee.salary || 0)}{' '}
+                                {moneyLabel}
                               </p>
                               <p className="text-gray-700 dark:text-gray-200">
-                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'السلف:' : 'Advances:'}</b>{' '}
-                                {numberFormatter.format(employee.advances || 0)} {moneyLabel}
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'السلف:' : 'Advances:'}</b> {numberFormatter.format(employee.advances || 0)}{' '}
+                                {moneyLabel}
                               </p>
                               <p className="text-gray-700 dark:text-gray-200">
-                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'تاريخ التعيين:' : 'Hire date:'}</b>{' '}
-                                {employee.hire_date || '—'}
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'حوافز الشهر:' : 'Monthly bonuses:'}</b>{' '}
+                                {numberFormatter.format(ledgerTotals.bonus)} {moneyLabel}
+                              </p>
+                              <p className="text-gray-700 dark:text-gray-200">
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'خصومات الشهر:' : 'Monthly deductions:'}</b>{' '}
+                                {numberFormatter.format(ledgerTotals.penalty)} {moneyLabel}
+                              </p>
+                              <p className="text-gray-700 dark:text-gray-200">
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'تاريخ التعيين:' : 'Hire date:'}</b> {employee.hire_date || '—'}
                               </p>
                             </div>
                           </div>
 
                           {employee.qr_code_attendance_base64 ? (
                             <div className="bg-gray-50/60 border border-gray-100 rounded-2xl p-4 text-center dark:bg-slate-800/60 dark:border-slate-700">
-                              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-3">
-                                {isAr ? 'QR الحضور والانصراف' : 'Attendance QR'}
-                              </h3>
+                              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-3">{isAr ? 'QR الحضور والانصراف' : 'Attendance QR'}</h3>
                               <img
                                 src={`data:image/png;base64,${employee.qr_code_attendance_base64}`}
                                 className="mx-auto w-40 border rounded-2xl dark:border-slate-700"
                                 alt="QR Attendance"
                               />
-                              <p className="text-xs text-gray-500 mt-3 dark:text-gray-400">
-                                {isAr ? 'يُستخدم لتسجيل الدخول والانصراف' : 'Used for check-in and check-out'}
-                              </p>
+                              <p className="text-xs text-gray-500 mt-3 dark:text-gray-400">{isAr ? 'يُستخدم لتسجيل الدخول والانصراف' : 'Used for check-in and check-out'}</p>
                             </div>
                           ) : (
                             <div className="bg-gray-50/60 border border-gray-100 rounded-2xl p-4 dark:bg-slate-800/60 dark:border-slate-700">
-                              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-2">
-                                {isAr ? 'QR الحضور والانصراف' : 'Attendance QR'}
-                              </h3>
-                              <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {isAr ? 'غير متوفر لهذا الموظف.' : 'Not available for this employee.'}
-                              </p>
+                              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-2">{isAr ? 'QR الحضور والانصراف' : 'Attendance QR'}</h3>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">{isAr ? 'غير متوفر لهذا الموظف.' : 'Not available for this employee.'}</p>
                             </div>
                           )}
                         </div>
@@ -621,9 +693,7 @@ export default function EmployeeProfile() {
                           <div className="bg-white border border-gray-100 rounded-2xl p-4 md:p-5 dark:bg-slate-900 dark:border-slate-800">
                             <div className="flex items-center justify-between gap-3 flex-wrap">
                               <div>
-                                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
-                                  {isAr ? 'تعديل بيانات الموظف' : 'Edit Employee'}
-                                </h3>
+                                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">{isAr ? 'تعديل بيانات الموظف' : 'Edit Employee'}</h3>
                                 <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
                                   {isAr ? 'تحديث الراتب والسلف والفرع وتاريخ التعيين' : 'Update salary, advances, branch, and hire date'}
                                 </p>
@@ -632,9 +702,7 @@ export default function EmployeeProfile() {
 
                             <div className="mt-4 grid gap-4 md:grid-cols-2">
                               <label className="space-y-1 text-xs">
-                                <span className="text-gray-600 dark:text-gray-300">
-                                  {isAr ? 'الراتب الشهري' : 'Monthly Salary'}
-                                </span>
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'الراتب الشهري' : 'Monthly Salary'}</span>
                                 <input
                                   type="number"
                                   className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
@@ -644,9 +712,7 @@ export default function EmployeeProfile() {
                               </label>
 
                               <label className="space-y-1 text-xs">
-                                <span className="text-gray-600 dark:text-gray-300">
-                                  {isAr ? 'السلف المتراكمة' : 'Total Advances'}
-                                </span>
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'السلف المتراكمة' : 'Total Advances'}</span>
                                 <input
                                   type="number"
                                   className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
@@ -656,10 +722,8 @@ export default function EmployeeProfile() {
                               </label>
 
                               <label className="space-y-1 text-xs">
-                                <span className="text-gray-600 dark:text-gray-300">
-                                  {isAr ? 'تاريخ التعيين' : 'Hire Date'}
-                                </span>
-                                <input                                
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'تاريخ التعيين' : 'Hire Date'}</span>
+                                <input
                                   type="date"
                                   className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
                                   value={editData.hire_date || ''}
@@ -668,9 +732,7 @@ export default function EmployeeProfile() {
                               </label>
 
                               <label className="space-y-1 text-xs">
-                                <span className="text-gray-600 dark:text-gray-300">
-                                  {isAr ? 'المتجر' : 'Store'}
-                                </span>
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'المتجر' : 'Store'}</span>
                                 <select
                                   className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
                                   value={editData.store || ''}
@@ -692,9 +754,7 @@ export default function EmployeeProfile() {
                               </label>
 
                               <label className="space-y-1 text-xs">
-                                <span className="text-gray-600 dark:text-gray-300">
-                                  {isAr ? 'الفرع' : 'Branch'}
-                                </span>
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'الفرع' : 'Branch'}</span>
                                 <select
                                   className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
                                   value={editData.branch || ''}
@@ -713,28 +773,22 @@ export default function EmployeeProfile() {
                                     </option>
                                   ))}
                                 </select>
-                                {branchesLoading && (
-                                  <p className="text-[11px] text-gray-500 mt-1">
-                                    {isAr ? 'جاري تحميل الفروع...' : 'Loading branches...'}
-                                  </p>
-                                )}
+                                {branchesLoading && <p className="text-[11px] text-gray-500 mt-1">{isAr ? 'جاري تحميل الفروع...' : 'Loading branches...'}</p>}
                                 {!branchesLoading && editData.store && branches.length === 0 && (
                                   <p className="text-[11px] text-red-600 mt-1 dark:text-red-300">
-                                    {isAr
-                                      ? 'لا توجد فروع مرتبطة بهذا المتجر.'
-                                      : 'No branches found for this store.'}
+                                    {isAr ? 'لا توجد فروع مرتبطة بهذا المتجر.' : 'No branches found for this store.'}
                                   </p>
                                 )}
                               </label>
                             </div>
-                            
+
                             <div className="mt-4 flex gap-3 flex-wrap">
                               <button
                                 onClick={updateEmployee}
                                 disabled={saving}
                                 className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-60"
                               >
-                                {saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : (isAr ? 'حفظ التعديلات' : 'Save changes')}
+                                {saving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : isAr ? 'حفظ التعديلات' : 'Save changes'}
                               </button>
 
                               <button
@@ -742,7 +796,7 @@ export default function EmployeeProfile() {
                                 disabled={deleting}
                                 className="px-4 py-2 rounded-xl border border-red-500 text-red-600 text-sm font-semibold hover:bg-red-50 transition disabled:opacity-60 dark:hover:bg-red-900/20"
                               >
-                                {deleting ? (isAr ? 'جاري الفصل...' : 'Terminating...') : (isAr ? 'فصل الموظف' : 'Terminate')}
+                                {deleting ? (isAr ? 'جاري الفصل...' : 'Terminating...') : isAr ? 'فصل الموظف' : 'Terminate'}
                               </button>
                             </div>
                           </div>
@@ -753,10 +807,24 @@ export default function EmployeeProfile() {
                     {/* ATTENDANCE */}
                     {activeTab === 'attendance' && (
                       <>
-                        {attendance.length === 0 ? (
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
                           <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {isAr ? 'لا توجد سجلات حضور حتى الآن.' : 'No attendance records yet.'}
+                            {isAr
+                              ? 'تعرض البيانات للشهر المحدد، يتم إعادة التعيين تلقائياً في أول كل شهر.'
+                              : 'Showing data for the selected month. View resets automatically on the 1st of each month.'}
                           </p>
+                          <label className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                            <span>{isAr ? 'اختر الشهر' : 'Select month'}</span>
+                            <input
+                              type="month"
+                              value={selectedMonth}
+                              onChange={(e) => setSelectedMonth(e.target.value)}
+                              className="rounded-xl border border-gray-200 px-2 py-1 text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                            />
+                          </label>
+                        </div>
+                        {attendance.length === 0 ? (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{isAr ? 'لا توجد سجلات حضور حتى الآن.' : 'No attendance records yet.'}</p>
                         ) : (
                           <>
                             {/* Mobile cards */}
@@ -767,12 +835,8 @@ export default function EmployeeProfile() {
                                   className="border border-gray-100 rounded-2xl p-3 bg-gray-50/60 flex flex-col gap-1 dark:bg-slate-800/70 dark:border-slate-700"
                                 >
                                   <div className="flex items-center justify-between">
-                                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">
-                                      {isAr ? `سجل #${i + 1}` : `Record #${i + 1}`}
-                                    </span>
-                                    <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                                      {isAr ? 'المدة' : 'Duration'}: {a.duration || 0}
-                                    </span>
+                                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">{isAr ? `سجل #${i + 1}` : `Record #${i + 1}`}</span>
+                                    <span className="text-[11px] text-gray-500 dark:text-gray-400">{isAr ? 'المدة' : 'Duration'}: {a.duration || 0}</span>
                                   </div>
                                   <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
                                     <span>{isAr ? 'الدخول' : 'In'}: {a.check_in || '—'}</span>
@@ -780,9 +844,7 @@ export default function EmployeeProfile() {
                                   </div>
                                   <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
                                     <span>{isAr ? 'تأخير' : 'Late'}: {a.late_minutes || 0}</span>
-                                    <span>
-                                      {isAr ? 'غرامة' : 'Penalty'}: {numberFormatter.format(a.penalty || 0)} {moneyLabel}
-                                    </span>
+                                    <span>{isAr ? 'غرامة' : 'Penalty'}: {numberFormatter.format(a.penalty || 0)} {moneyLabel}</span>
                                   </div>
                                 </div>
                               ))}
@@ -793,44 +855,21 @@ export default function EmployeeProfile() {
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'الدخول' : 'Check-in'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'الخروج' : 'Check-out'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'تأخير' : 'Late'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'غرامة' : 'Penalty'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'المدة' : 'Duration'}
-                                    </th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الدخول' : 'Check-in'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الخروج' : 'Check-out'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'تأخير' : 'Late'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'غرامة' : 'Penalty'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'المدة' : 'Duration'}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {attendance.map((a, i) => (
-                                    <tr
-                                      key={i}
-                                      className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70"
-                                    >
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
-                                        {a.check_in || '—'}
-                                      </td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
-                                        {a.check_out || '—'}
-                                      </td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                                        {a.late_minutes || 0}
-                                      </td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                                        {numberFormatter.format(a.penalty || 0)} {moneyLabel}
-                                      </td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                                        {a.duration || 0}
-                                      </td>
+                                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{a.check_in || '—'}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{a.check_out || '—'}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{a.late_minutes || 0}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(a.penalty || 0)} {moneyLabel}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{a.duration || 0}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -846,34 +885,24 @@ export default function EmployeeProfile() {
                       <div className="space-y-4">
                         {canManage && (
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={generatePayroll}
-                              className="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition"
-                            >
+                            <button onClick={generatePayroll} className="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition">
                               {isAr ? 'احتساب مرتب جديد' : 'Generate New Payroll'}
                             </button>
                           </div>
                         )}
 
                         {payrolls.length === 0 ? (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {isAr ? 'لا توجد مرتبات حتى الآن.' : 'No payroll records yet.'}
-                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{isAr ? 'لا توجد مرتبات حتى الآن.' : 'No payroll records yet.'}</p>
                         ) : (
                           <>
                             {/* Mobile cards */}
                             <div className="space-y-2 md:hidden">
                               {payrolls.map((p) => (
-                                <div
-                                  key={p.id}
-                                  className="border border-gray-100 rounded-2xl p-3 bg-gray-50/60 dark:bg-slate-800/70 dark:border-slate-700"
-                                >
+                                <div key={p.id} className="border border-gray-100 rounded-2xl p-3 bg-gray-50/60 dark:bg-slate-800/70 dark:border-slate-700">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">
-                                      {isAr ? 'الشهر' : 'Month'}: {p.month}
-                                    </span>
+                                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">{isAr ? 'الشهر' : 'Month'}: {p.month}</span>
                                     <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200">
-                                      {p.is_locked ? (isAr ? 'مغلق 🔒' : 'Locked 🔒') : (isAr ? 'مفتوح' : 'Open')}
+                                      {p.is_locked ? (isAr ? 'مغلق 🔒' : 'Locked 🔒') : isAr ? 'مفتوح' : 'Open'}
                                     </span>
                                   </div>
                                   <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-gray-600 dark:text-gray-300">
@@ -882,6 +911,18 @@ export default function EmployeeProfile() {
                                     <div className="col-span-2 font-semibold text-gray-800 dark:text-gray-100">
                                       {isAr ? 'الصافي' : 'Net'}: {numberFormatter.format(p.net_salary || 0)} {moneyLabel}
                                     </div>
+                                    <div className="col-span-2 text-[11px] text-gray-600 dark:text-gray-300">
+                                      {p.is_paid ? (isAr ? `مدفوع بتاريخ ${p.paid_at || ''}` : `Paid on ${p.paid_at || ''}`) : isAr ? 'غير مدفوع بعد' : 'Not paid yet'}
+                                    </div>
+                                    {canManage && !p.is_paid && (
+                                      <button
+                                        onClick={() => markPayrollPaid(p.id)}
+                                        disabled={markingPayrollId === p.id}
+                                        className="col-span-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 transition disabled:opacity-60"
+                                      >
+                                        {markingPayrollId === p.id ? (isAr ? 'جاري التعليم...' : 'Marking...') : isAr ? 'تعليم كمدفوع' : 'Mark as paid'}
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               ))}
@@ -892,45 +933,40 @@ export default function EmployeeProfile() {
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'الشهر' : 'Month'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'الأساسي' : 'Base'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'الخصومات' : 'Penalties'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'الصافي' : 'Net'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'الحالة' : 'Status'}
-                                    </th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الشهر' : 'Month'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الأساسي' : 'Base'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الخصومات' : 'Penalties'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الصافي' : 'Net'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الحالة' : 'Status'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'دفع' : 'Payment'}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {payrolls.map((p) => (
-                                    <tr
-                                      key={p.id}
-                                      className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70"
-                                    >
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
-                                        {p.month}
-                                      </td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                                        {numberFormatter.format(p.base_salary || 0)}
-                                      </td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
-                                        {numberFormatter.format(p.penalties || 0)}
-                                      </td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
-                                        {numberFormatter.format(p.net_salary || 0)} {moneyLabel}
-                                      </td>
+                                    <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{p.month}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(p.base_salary || 0)}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(p.penalties || 0)}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{numberFormatter.format(p.net_salary || 0)} {moneyLabel}</td>
                                       <td className="py-2 px-2 whitespace-nowrap">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200">
-                                          {p.is_locked ? (isAr ? 'مغلق 🔒' : 'Locked 🔒') : (isAr ? 'مفتوح' : 'Open')}
+                                          {p.is_locked ? (isAr ? 'مغلق 🔒' : 'Locked 🔒') : isAr ? 'مفتوح' : 'Open'}
                                         </span>
+                                      </td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
+                                        {p.is_paid ? (
+                                          isAr ? `مدفوع (${p.paid_at || ''})` : `Paid (${p.paid_at || ''})`
+                                        ) : canManage ? (
+                                          <button
+                                            onClick={() => markPayrollPaid(p.id)}
+                                            disabled={markingPayrollId === p.id}
+                                            className="px-3 py-1 rounded-full bg-emerald-600 text-white text-[11px] hover:bg-emerald-700 disabled:opacity-60"
+                                          >
+                                            {markingPayrollId === p.id ? (isAr ? 'جاري التعليم...' : 'Marking...') : isAr ? 'تعليم كمدفوع' : 'Mark paid'}
+                                          </button>
+                                        ) : (
+                                          <span className="text-[11px] text-red-600 dark:text-red-300">{isAr ? 'غير مدفوع' : 'Unpaid'}</span>
+                                        )}
                                       </td>
                                     </tr>
                                   ))}
@@ -945,33 +981,97 @@ export default function EmployeeProfile() {
                     {/* LEDGER */}
                     {activeTab === 'ledger' && (
                       <>
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{isAr ? 'استخدم الفلتر لعرض الحوافز والخصومات حسب الشهر.' : 'Use the filter to view bonuses and deductions by month.'}</p>
+                          <label className="text-xs flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                            <span>{isAr ? 'الشهر' : 'Month'}</span>
+                            <input
+                              type="month"
+                              value={selectedMonth}
+                              onChange={(e) => setSelectedMonth(e.target.value)}
+                              className="rounded-xl border border-gray-200 px-2 py-1 text-xs bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                            />
+                          </label>
+                        </div>
+
+                        {canManage && (
+                          <div className="bg-white rounded-2xl border border-gray-100 p-3 md:p-4 mb-4 dark:bg-slate-900 dark:border-slate-800">
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-2">{isAr ? 'إضافة حركة (حافز / خصم / سلفة)' : 'Add entry (Bonus / Deduction / Advance)'}</h4>
+                            <div className="grid gap-2 md:grid-cols-4 text-xs">
+                              <label className="flex flex-col gap-1">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'النوع' : 'Type'}</span>
+                                <select
+                                  value={ledgerForm.entry_type}
+                                  onChange={(e) => setLedgerForm({ ...ledgerForm, entry_type: e.target.value })}
+                                  className="rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                >
+                                  <option value="BONUS">{isAr ? 'حافز' : 'Bonus'}</option>
+                                  <option value="PENALTY">{isAr ? 'خصم' : 'Deduction'}</option>
+                                  <option value="ADVANCE">{isAr ? 'سلفة' : 'Advance'}</option>
+                                </select>
+                              </label>
+
+                              <label className="flex flex-col gap-1">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'القيمة' : 'Amount'}</span>
+                                <input
+                                  type="number"
+                                  value={ledgerForm.amount}
+                                  onChange={(e) => setLedgerForm({ ...ledgerForm, amount: e.target.value })}
+                                  className="rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                />
+                              </label>
+
+                              <label className="flex flex-col gap-1">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'التاريخ' : 'Date'}</span>
+                                <input
+                                  type="date"
+                                  value={ledgerForm.payout_date}
+                                  onChange={(e) => setLedgerForm({ ...ledgerForm, payout_date: e.target.value })}
+                                  className="rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                />
+                              </label>
+
+                              <label className="flex flex-col gap-1 md:col-span-1">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'الوصف' : 'Description'}</span>
+                                <input
+                                  type="text"
+                                  value={ledgerForm.description}
+                                  onChange={(e) => setLedgerForm({ ...ledgerForm, description: e.target.value })}
+                                  className="rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                  placeholder={isAr ? 'اختياري' : 'Optional'}
+                                />
+                              </label>
+                            </div>
+
+                            <div className="mt-3">
+                              <button
+                                onClick={addLedgerEntry}
+                                disabled={ledgerSaving}
+                                className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition disabled:opacity-60"
+                              >
+                                {ledgerSaving ? (isAr ? 'جاري الحفظ...' : 'Saving...') : isAr ? 'حفظ الحركة' : 'Save entry'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         {ledger.length === 0 ? (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {isAr ? 'لا توجد حركات مالية حتى الآن.' : 'No ledger entries yet.'}
-                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{isAr ? 'لا توجد حركات مالية حتى الآن.' : 'No ledger entries yet.'}</p>
                         ) : (
                           <>
                             {/* Mobile cards */}
                             <div className="space-y-2 md:hidden">
                               {ledger.map((l, i) => (
-                                <div
-                                  key={i}
-                                  className="border border-gray-100 rounded-2xl p-3 bg-gray-50/60 dark:bg-slate-800/70 dark:border-slate-700"
-                                >
+                                <div key={i} className="border border-gray-100 rounded-2xl p-3 bg-gray-50/60 dark:bg-slate-800/70 dark:border-slate-700">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">
-                                      {isAr ? 'النوع' : 'Type'}: {l.type}
-                                    </span>
+                                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">{isAr ? 'النوع' : 'Type'}: {l.type}</span>
                                     <span className="text-[11px] text-gray-500 dark:text-gray-400">
                                       {new Date(l.created_at).toLocaleDateString(isAr ? 'ar-EG' : 'en-EG')}
                                     </span>
                                   </div>
-                                  <div className="mt-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                    {isAr ? 'الوصف' : 'Description'}: {l.description || '—'}
-                                  </div>
-                                  <div className="mt-2 font-semibold text-gray-800 dark:text-gray-100 text-sm">
-                                    {numberFormatter.format(l.amount || 0)} {moneyLabel}
-                                  </div>
+                                  <div className="mt-2 text-[11px] text-gray-600 dark:text-gray-300">{isAr ? 'الوصف' : 'Description'}: {l.description || '—'}</div>
+                                  <div className="text-[11px] text-gray-500 dark:text-gray-400">{isAr ? 'تاريخ الصرف' : 'Payout'}: {l.payout_date || '—'}</div>
+                                  <div className="mt-2 font-semibold text-gray-800 dark:text-gray-100 text-sm">{numberFormatter.format(l.amount || 0)} {moneyLabel}</div>
                                 </div>
                               ))}
                             </div>
@@ -981,38 +1081,23 @@ export default function EmployeeProfile() {
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'النوع' : 'Type'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'القيمة' : 'Amount'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'الوصف' : 'Description'}
-                                    </th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                      {isAr ? 'التاريخ' : 'Date'}
-                                    </th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'النوع' : 'Type'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'القيمة' : 'Amount'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الوصف' : 'Description'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'التاريخ' : 'Date'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'تاريخ الصرف' : 'Payout date'}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {ledger.map((l, i) => (
-                                    <tr
-                                      key={i}
-                                      className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70"
-                                    >
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
-                                        {l.type}
-                                      </td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
-                                        {numberFormatter.format(l.amount || 0)} {moneyLabel}
-                                      </td>
-                                      <td className="py-2 px-2 text-gray-600 dark:text-gray-300">
-                                        {l.description || '—'}
-                                      </td>
+                                    <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{l.type}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{numberFormatter.format(l.amount || 0)} {moneyLabel}</td>
+                                      <td className="py-2 px-2 text-gray-600 dark:text-gray-300">{l.description || '—'}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
                                         {new Date(l.created_at).toLocaleDateString(isAr ? 'ar-EG' : 'en-EG')}
                                       </td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{l.payout_date || '—'}</td>
                                     </tr>
                                   ))}
                                 </tbody>

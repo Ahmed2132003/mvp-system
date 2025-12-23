@@ -25,6 +25,8 @@ import AdminCreateStore from './pages/AdminCreateStore';
 import EmployeeProfile from './pages/EmployeeProfile';
 import Employees from './pages/Employees.jsx';
 import Accounting from './pages/Accounting.jsx';
+import Unauthorized from './pages/Unauthorized.jsx';
+import HomeRedirect from './pages/HomeRedirect.jsx';
 
 if (window.location.pathname.startsWith('/admin')) {
   window.location.href = 'http://127.0.0.1:8000/admin/';
@@ -44,7 +46,7 @@ function App() {
               path="/"
               element={
                 <ProtectedRoute>
-                  <Dashboard />
+                  <HomeRedirect />                  
                 </ProtectedRoute>
               }
             />
@@ -61,7 +63,7 @@ function App() {
             <Route
               path="/users/create"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['OWNER', 'MANAGER']}>
                   <CreateUser />
                 </ProtectedRoute>
               }
@@ -86,7 +88,7 @@ function App() {
             <Route
               path="/inventory"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['OWNER', 'MANAGER']}>
                   <InventoryPage />
                 </ProtectedRoute>
               }
@@ -128,7 +130,7 @@ function App() {
             <Route
               path="/reports"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['OWNER', 'MANAGER']}>
                   <Reports />
                 </ProtectedRoute>
               }
@@ -136,7 +138,7 @@ function App() {
             <Route
               path="/settings"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['OWNER', 'MANAGER']}>
                   <Settings />
                 </ProtectedRoute>
               }
@@ -166,17 +168,33 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/employees/me"
+              element={
+                <ProtectedRoute>
+                  <EmployeeProfile />
+                </ProtectedRoute>
+              }
+            />
 
             <Route
               path="/accounting"
               element={
-                <ProtectedRoute>
+                <ProtectedRoute allowedRoles={['OWNER', 'MANAGER']}>
                   <Accounting />
                 </ProtectedRoute>
               }
             />
             
-
+            <Route
+              path="/unauthorized"
+              element={
+                <ProtectedRoute>
+                  <Unauthorized />
+                </ProtectedRoute>
+              }
+            />
+            
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
