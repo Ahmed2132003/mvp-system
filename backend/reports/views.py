@@ -3,7 +3,7 @@ from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import Sum, F, Count, Q, Value, DecimalField
+from django.db.models import Sum, F, Count, Q, Value, DecimalField, ExpressionWrapper
 from django.db.models.functions import TruncHour, TruncDate, TruncMonth, Coalesce
 from django.db.utils import OperationalError, ProgrammingError
 from django.utils import timezone
@@ -873,48 +873,243 @@ def payroll_movements_report(request):
 @permission_classes([IsAuthenticated])
 def api_accounting(request):
     """
-    Returns accounting summary:
-    - total_salaries (locked payrolls sum)
-    - total_penalties (ledger PENALTY sum)
-    - total_advances (ledger ADVANCE sum)
-    - total_bonuses (ledger BONUS sum)
-    - net_out (salaries + bonuses - penalties - advances)  [simple view]
+    ملخص شامل للحسابات:
+    - رواتب مستحقة محسوبة حسب الحضور (يومي/شهري/سنوي) مع الحوافز والخصومات والسلف.
+    - إجمالي مشتريات المخزون (قيمة الشراء + قيمة البيع المتوقعة) في نفس الفترة.
+    - إجمالي المبيعات المدفوعة في الفترة.
+    - المصروفات = الرواتب (مع الحوافز/السلف مطبقة والخصومات مطروحة) + مشتريات المخزون.
+    - الربح = المبيعات - المصروفات.    
     """
 
-    # optional: month query ?month=2025-12-01
-    month_str = request.query_params.get('month')
-    month_date = None
-    if month_str:
-        try:
-            y, m, d = month_str.split('-')
-            month_date = date(int(y), int(m), int(d))
-        except Exception:
-            month_date = None
+    try:
+        now = timezone.now()
 
-    payroll_qs = PayrollPeriod.objects.filter(is_locked=True)
-    ledger_qs = EmployeeLedger.objects.all()
+        # دعم قديم ?month=2025-12-01 بجانب period_type/period_value
+        month_override = request.query_params.get("month")
+        period_type_param = request.query_params.get("period_type") or "month"
+        period_value_param = request.query_params.get("period_value")
 
-    if month_date:
-        payroll_qs = payroll_qs.filter(month=month_date)
-        # لو حابب تربط الليدجر بالـ payroll لنفس الشهر:
-        ledger_qs = ledger_qs.filter(payroll__month=month_date)
+        if month_override and not period_value_param:
+            period_type_param = "month"
+            period_value_param = (month_override or "")[:7]
 
-    total_salaries = payroll_qs.aggregate(v=Sum('net_salary'))['v'] or 0
-    total_penalties = ledger_qs.filter(entry_type='PENALTY').aggregate(v=Sum('amount'))['v'] or 0
-    total_advances = ledger_qs.filter(entry_type='ADVANCE').aggregate(v=Sum('amount'))['v'] or 0
-    total_bonuses = ledger_qs.filter(entry_type='BONUS').aggregate(v=Sum('amount'))['v'] or 0
+        period_type, normalized_period, attendance_filter = _parse_period_for_field(
+            "work_date", period_type_param, period_value_param, now, use_date_lookup=False
+        )
+        _, _, ledger_filter = _parse_period_for_field(
+            "payout_date", period_type_param, period_value_param, now, use_date_lookup=False
+        )
+        _, _, order_filter = _parse_period_for_field("created_at", period_type_param, period_value_param, now)
+        _, _, purchase_filter = _parse_period_for_field("created_at", period_type_param, period_value_param, now)
 
-    net_out = (total_salaries + total_bonuses) - (total_penalties + total_advances)
+        store = get_store_from_request(request)
+        branch = get_branch_from_request(request, store=store)
 
-    return Response({
-        "month": month_date,
-        "total_salaries": total_salaries,
-        "total_penalties": total_penalties,
-        "total_advances": total_advances,
-        "total_bonuses": total_bonuses,
-        "net_out": net_out,
-        "generated_at": timezone.now(),
-    })
+        employees_qs = Employee.objects.select_related("user")
+        if store:
+            employees_qs = employees_qs.filter(store=store)
+        if branch:
+            employees_qs = employees_qs.filter(branch=branch)
+
+        employees_map = {
+            emp.id: {
+                "employee_id": emp.id,
+                "employee_name": getattr(emp.user, "name", None) or emp.user.email,
+                "salary": Decimal(emp.salary or 0),
+            }
+            for emp in employees_qs
+        }
+
+        attendance_qs = AttendanceLog.objects.filter(**attendance_filter)
+        if store:
+            attendance_qs = attendance_qs.filter(employee__store=store)
+        if branch:
+            attendance_qs = attendance_qs.filter(employee__branch=branch)
+
+        attendance_rows = attendance_qs.values("employee_id").annotate(
+            days=Count("work_date", distinct=True),
+            total_minutes=Coalesce(Sum("duration_minutes"), Value(0)),
+            late_minutes=Coalesce(Sum("late_minutes"), Value(0)),
+        )
+
+        attendance_map = {row["employee_id"]: row for row in attendance_rows}
+
+        ledger_qs = EmployeeLedger.objects.filter(**ledger_filter)
+        if store:
+            ledger_qs = ledger_qs.filter(employee__store=store)
+        if branch:
+            ledger_qs = ledger_qs.filter(employee__branch=branch)
+
+        ledger_rows = ledger_qs.values("employee_id", "entry_type").annotate(total=Sum("amount"))
+        ledger_map = defaultdict(lambda: defaultdict(Decimal))
+        for row in ledger_rows:
+            ledger_map[row["employee_id"]][row["entry_type"]] = row["total"] or Decimal("0")
+
+        # payroll per employee
+        payroll_rows = []
+        attendance_value_total = Decimal("0")
+        bonuses_total = Decimal("0")
+        penalties_total = Decimal("0")
+        advances_total = Decimal("0")
+        attendance_days_total = 0
+
+        for emp_id, meta in employees_map.items():
+            att_row = attendance_map.get(emp_id, {})
+            days = int(att_row.get("days") or 0)
+            late_minutes = int(att_row.get("late_minutes") or 0)
+            worked_minutes = int(att_row.get("total_minutes") or 0)
+
+            base_salary = meta["salary"]
+            daily_rate = (base_salary / Decimal("30")) if base_salary else Decimal("0")
+            attendance_value = daily_rate * Decimal(days)
+
+            bonuses = ledger_map[emp_id].get("BONUS", Decimal("0"))
+            penalties = ledger_map[emp_id].get("PENALTY", Decimal("0"))
+            advances = ledger_map[emp_id].get("ADVANCE", Decimal("0"))
+
+            net_salary = attendance_value + bonuses + advances - penalties
+
+            attendance_value_total += attendance_value
+            bonuses_total += bonuses
+            penalties_total += penalties
+            advances_total += advances
+            attendance_days_total += days
+
+            payroll_rows.append(
+                {
+                    "employee_id": emp_id,
+                    "employee_name": meta["employee_name"],
+                    "base_salary": float(base_salary),
+                    "daily_rate": float(daily_rate),
+                    "attendance_days": days,
+                    "attendance_value": float(attendance_value),
+                    "late_minutes": late_minutes,
+                    "worked_minutes": worked_minutes,
+                    "bonuses": float(bonuses),
+                    "penalties": float(penalties),
+                    "advances": float(advances),
+                    "net_salary": float(net_salary),
+                }
+            )
+
+        payroll_total = attendance_value_total + bonuses_total + advances_total - penalties_total
+
+        purchase_qs = InventoryMovement.objects.filter(movement_type="IN", change__gt=0, **purchase_filter).select_related(
+            "item"
+        )
+        if store:
+            purchase_qs = purchase_qs.filter(branch__store=store)
+        if branch:
+            purchase_qs = purchase_qs.filter(branch=branch)
+
+        cost_expr = ExpressionWrapper(
+            F("change")
+            * Coalesce(F("item__cost_price"), Value(0), output_field=DecimalField(max_digits=10, decimal_places=2)),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        )
+        sale_expr = ExpressionWrapper(
+            F("change")
+            * Coalesce(F("item__unit_price"), Value(0), output_field=DecimalField(max_digits=10, decimal_places=2)),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        )
+
+        purchase_totals = purchase_qs.annotate(cost_value=cost_expr, sale_value=sale_expr).aggregate(
+            cost_total=Coalesce(Sum("cost_value"), Value(0), output_field=DecimalField(max_digits=14, decimal_places=2)),
+            sale_total=Coalesce(Sum("sale_value"), Value(0), output_field=DecimalField(max_digits=14, decimal_places=2)),
+        )
+
+        purchase_cost_total = purchase_totals.get("cost_total") or Decimal("0")
+        purchase_sale_total = purchase_totals.get("sale_total") or Decimal("0")
+
+        paid_filter = Q(status="PAID") | Q(is_paid=True)
+        orders_qs = Order.objects.filter(paid_filter, **order_filter)
+        if store:
+            orders_qs = orders_qs.filter(store=store)
+        if branch:
+            orders_qs = orders_qs.filter(branch=branch)
+
+        total_sales = orders_qs.aggregate(total=Sum("total"))["total"] or Decimal("0")
+
+        total_expenses = payroll_total + purchase_cost_total
+        net_profit = total_sales - total_expenses
+
+        return Response(
+            {
+                "period_type": period_type,
+                "period_value": normalized_period,
+                "currency": "EGP",
+                "payroll": {
+                    "attendance_days": attendance_days_total,
+                    "attendance_value_total": float(attendance_value_total),
+                    "bonuses_total": float(bonuses_total),
+                    "penalties_total": float(penalties_total),
+                    "advances_total": float(advances_total),
+                    "payroll_total": float(payroll_total),
+                    "rows": payroll_rows,
+                },
+                "inventory": {
+                    "purchase_cost_total": float(purchase_cost_total),
+                    "purchase_sale_value_total": float(purchase_sale_total),
+                },
+                "sales": {
+                    "total_sales": float(total_sales),
+                },
+                "expenses": {
+                    "payroll": float(payroll_total),
+                    "purchases": float(purchase_cost_total),
+                    "bonuses": float(bonuses_total),
+                    "advances": float(advances_total),
+                    "penalties": float(penalties_total),
+                    "total": float(total_expenses),
+                },
+                "profit": {
+                    "net_profit": float(net_profit),
+                },
+                "legacy_totals": {
+                    "total_salaries": float(attendance_value_total),
+                    "total_penalties": float(penalties_total),
+                    "total_advances": float(advances_total),
+                    "total_bonuses": float(bonuses_total),
+                    "net_out": float(payroll_total),
+                },
+                "generated_at": timezone.now().isoformat(),
+            }
+        )
+    except (ProgrammingError, OperationalError) as e:
+        print("Accounting DB error:", e)
+        return Response(
+            {
+                "period_type": period_type_param or "month",
+                "period_value": period_value_param,
+                "currency": "EGP",
+                "payroll": {
+                    "attendance_days": 0,
+                    "attendance_value_total": 0.0,
+                    "bonuses_total": 0.0,
+                    "penalties_total": 0.0,
+                    "advances_total": 0.0,
+                    "payroll_total": 0.0,
+                    "rows": [],
+                },
+                "inventory": {
+                    "purchase_cost_total": 0.0,
+                    "purchase_sale_value_total": 0.0,
+                },
+                "sales": {"total_sales": 0.0},
+                "expenses": {
+                    "payroll": 0.0,
+                    "purchases": 0.0,
+                    "bonuses": 0.0,
+                    "advances": 0.0,
+                    "penalties": 0.0,
+                    "total": 0.0,
+                },
+                "profit": {"net_profit": 0.0},
+                "generated_at": None,
+            }
+        )    
+    
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def inventory_movements_report(request):
