@@ -415,7 +415,9 @@ export default function EmployeeProfile() {
       (acc, entry) => {
         if (entry.type === 'BONUS') acc.bonus += Number(entry.amount || 0);
         if (entry.type === 'PENALTY') acc.penalty += Number(entry.amount || 0);
-        if (entry.type === 'ADVANCE') acc.advance += Number(entry.amount || 0);
+        if (entry.type === 'ADVANCE') {
+          acc.advance += Number(entry.amount || 0);
+        }
         return acc;
       },
       { bonus: 0, penalty: 0, advance: 0 }
@@ -423,7 +425,9 @@ export default function EmployeeProfile() {
   }, [ledger]);
 
   const attendanceStats = useMemo(() => {
-    const totalDays = attendance.length;
+    const totalDays = new Set(
+      attendance.map((a) => a.work_date || (a.check_in ? String(a.check_in).slice(0, 10) : ''))
+    ).size;
     const totalLate = attendance.reduce((acc, a) => acc + (a.late_minutes || 0), 0);
     const totalPenalties = attendance.reduce((acc, a) => acc + (a.penalty || 0), 0);
     const missingCheckouts = attendance.filter((a) => !a.check_out).length;
@@ -435,10 +439,14 @@ export default function EmployeeProfile() {
     const attendanceDays = targetPayroll?.attendance_days ?? totalDays;
     const dailyRate = (Number(monthlySalary) || 0) / 30;
     const earnedBase = targetPayroll?.base_salary ?? attendanceDays * dailyRate;
-    const advancesTotal = Number(targetPayroll?.advances ?? ledgerTotals.advance ?? employee?.advances ?? 0);
+
+    // Keep frontend calculation consistent with backend snapshots:
+    // net = base_salary - penalties - advances + bonuses (min 0)
+    const penaltiesTotal = targetPayroll?.penalties ?? ledgerTotals.penalty;
+    const advancesTotal = targetPayroll?.advances ?? ledgerTotals.advance;
     const netSalary =
       targetPayroll?.net_salary ??
-      Math.max(earnedBase + ledgerTotals.bonus - ledgerTotals.penalty - advancesTotal, 0);
+      Math.max(earnedBase + ledgerTotals.bonus - penaltiesTotal - advancesTotal, 0);
 
     return { totalDays, totalLate, totalPenalties, missingCheckouts, netSalary, monthlySalary, attendanceDays, earnedBase };
   }, [attendance, payrolls, employee, selectedMonth, ledgerTotals]);
