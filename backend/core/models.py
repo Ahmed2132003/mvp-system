@@ -345,10 +345,16 @@ class PayrollPeriod(models.Model):
     total_work_minutes = models.PositiveIntegerField(default=0)
     total_late_minutes = models.PositiveIntegerField(default=0)
 
+    # عدد أيام الحضور الفعلية في الشهر (snapshot)
+    attendance_days = models.PositiveIntegerField(default=0)
+
+    # Snapshot للراتب الأساسي الشهري وقت إنشاء الكشف
+    monthly_salary = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+
     penalties = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     bonuses = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     advances = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-
+    
     net_salary = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, editable=False)
 
     is_locked = models.BooleanField(default=False)
@@ -368,8 +374,15 @@ class PayrollPeriod(models.Model):
         ordering = ["-month"]
 
     def calculate_net_salary(self):
-        self.net_salary = self.base_salary - self.penalties - self.advances + self.bonuses
+        from decimal import Decimal
 
+        base = Decimal(self.base_salary or 0)
+        penalties = Decimal(self.penalties or 0)
+        advances = Decimal(self.advances or 0)
+        bonuses = Decimal(self.bonuses or 0)
+
+        self.net_salary = max(base - penalties - advances + bonuses, Decimal("0.00"))
+        
     def lock(self):
         self.calculate_net_salary()
         self.is_locked = True

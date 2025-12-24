@@ -314,6 +314,7 @@ export default function EmployeeProfile() {
     setPayrollEdit({
       id: payroll.id,
       base_salary: payroll.base_salary ?? '',
+      monthly_salary: payroll.monthly_salary ?? payroll.base_salary ?? '',
       penalties: payroll.penalties ?? '',
       bonuses: payroll.bonuses ?? '',
       advances: payroll.advances ?? '',
@@ -322,7 +323,7 @@ export default function EmployeeProfile() {
 
   const savePayrollEdit = async () => {
     if (!payrollEdit.id || !employeeId) return;
-    if (Number(payrollEdit.base_salary) <= 0) {
+    if (Number(payrollEdit.monthly_salary) <= 0) {
       notifyError(isAr ? 'الراتب الأساسي يجب أن يكون أكبر من صفر.' : 'Base salary must be greater than zero.');
       return;
     }
@@ -331,12 +332,13 @@ export default function EmployeeProfile() {
       await api.patch(`/employees/${employeeId}/update_payroll/`, {
         payroll_id: payrollEdit.id,
         base_salary: Number(payrollEdit.base_salary) || 0,
+        monthly_salary: Number(payrollEdit.monthly_salary) || 0,
         penalties: Number(payrollEdit.penalties) || 0,
         bonuses: Number(payrollEdit.bonuses) || 0,
         advances: Number(payrollEdit.advances) || 0,
       });
       notifySuccess(isAr ? 'تم تعديل كشف المرتب' : 'Payroll updated');
-      setPayrollEdit({ id: null, base_salary: '', penalties: '', bonuses: '', advances: '' });
+      setPayrollEdit({ id: null, base_salary: '', monthly_salary: '', penalties: '', bonuses: '', advances: '' });
       fetchPayrolls();
       fetchLedger();
     } catch (err) {
@@ -408,6 +410,21 @@ export default function EmployeeProfile() {
     if (activeTab === 'ledger') fetchLedger();
   }, [activeTab, fetchAttendance, fetchPayrolls, fetchLedger]);
 
+  const ledgerTotals = useMemo(() => {
+    return ledger.reduce(
+      (acc, entry) => {
+        if (entry.type === 'BONUS') acc.bonus += Number(entry.amount || 0);
+        if (entry.type === 'PENALTY') acc.penalty += Number(entry.amount || 0);
+        if (entry.type === 'ADVANCE') {
+          acc.advance += Number(entry.amount || 0);
+          acc.penalty += Number(entry.amount || 0); // advances are deductions
+        }
+        return acc;
+      },
+      { bonus: 0, penalty: 0, advance: 0 }
+    );
+  }, [ledger]);
+
   const attendanceStats = useMemo(() => {
     const totalDays = attendance.length;
     const totalLate = attendance.reduce((acc, a) => acc + (a.late_minutes || 0), 0);
@@ -415,25 +432,19 @@ export default function EmployeeProfile() {
     const missingCheckouts = attendance.filter((a) => !a.check_out).length;
     const latestPayroll = [...payrolls].sort((a, b) => new Date(b.month) - new Date(a.month))[0];
     const currentPayroll = payrolls.find((p) => (p.month || '').startsWith(selectedMonth));
+    const targetPayroll = currentPayroll || latestPayroll;
+
+    const monthlySalary = targetPayroll?.monthly_salary ?? employee?.salary ?? 0;
+    const attendanceDays = targetPayroll?.attendance_days ?? totalDays;
+    const dailyRate = (Number(monthlySalary) || 0) / 30;
+    const earnedBase = targetPayroll?.base_salary ?? attendanceDays * dailyRate;
+    const advancesTotal = targetPayroll?.advances ?? employee?.advances ?? 0;
     const netSalary =
-      currentPayroll?.net_salary ??
-      latestPayroll?.net_salary ??
-      Math.max((employee?.salary || 0) - totalPenalties - (employee?.advances || 0), 0);
+      targetPayroll?.net_salary ??
+      Math.max(earnedBase + ledgerTotals.bonus - ledgerTotals.penalty - advancesTotal, 0);
 
-    return { totalDays, totalLate, totalPenalties, missingCheckouts, netSalary };
-  }, [attendance, payrolls, employee, selectedMonth]);
-
-  const ledgerTotals = useMemo(() => {
-    return ledger.reduce(
-      (acc, entry) => {
-        if (entry.type === 'BONUS') acc.bonus += Number(entry.amount || 0);
-        if (entry.type === 'PENALTY') acc.penalty += Number(entry.amount || 0);
-        if (entry.type === 'ADVANCE') acc.advance += Number(entry.amount || 0);
-        return acc;
-      },
-      { bonus: 0, penalty: 0, advance: 0 }
-    );
-  }, [ledger]);
+    return { totalDays, totalLate, totalPenalties, missingCheckouts, netSalary, monthlySalary, attendanceDays, earnedBase };
+  }, [attendance, payrolls, employee, selectedMonth, ledgerTotals]);
 
   const updateEmployee = async () => {
         const targetId = employeeId || id;
@@ -661,10 +672,15 @@ export default function EmployeeProfile() {
                 </section>
 
                 {/* KPI Summary */}
-                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
+                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-8">
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'أيام الحضور' : 'Attendance Days'}</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">{numberFormatter.format(attendanceStats.totalDays)}</p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'الحضور المحتسب' : 'Counted attendance'}</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">{numberFormatter.format(attendanceStats.attendanceDays)}</p>
                   </div>
 
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
@@ -681,6 +697,20 @@ export default function EmployeeProfile() {
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'إجمالي الجزاءات' : 'Total Penalties'}</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
                       {numberFormatter.format(attendanceStats.totalPenalties)} {moneyLabel}
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'المرتب الأساسي' : 'Base Salary (Monthly)'}</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
+                      {numberFormatter.format(attendanceStats.monthlySalary || 0)} {moneyLabel}
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'أساسي مستحق' : 'Earned Base'}</p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
+                      {numberFormatter.format(attendanceStats.earnedBase || 0)} {moneyLabel}
                     </p>
                   </div>
 
@@ -1038,6 +1068,12 @@ export default function EmployeeProfile() {
                             >
                               {isAr ? 'إضافة خصم' : 'Add deduction'}
                             </button>
+                            <button
+                              onClick={() => setActiveTab('info')}
+                              className="px-3 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                            >
+                              {isAr ? 'تعديل بيانات الموظف' : 'Edit employee info'}
+                            </button>
                           </div>
                         )}
 
@@ -1056,8 +1092,12 @@ export default function EmployeeProfile() {
                                     </span>
                                   </div>
                                   <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-gray-600 dark:text-gray-300">
-                                    <div>{isAr ? 'الأساسي' : 'Base'}: {numberFormatter.format(p.base_salary || 0)}</div>
+                                    <div>{isAr ? 'الأساسي الشهري' : 'Monthly base'}: {numberFormatter.format(p.monthly_salary || 0)}</div>
+                                    <div>{isAr ? 'أيام الحضور' : 'Attendance days'}: {numberFormatter.format(p.attendance_days || 0)}</div>
+                                    <div>{isAr ? 'أساسي مستحق' : 'Earned base'}: {numberFormatter.format(p.base_salary || 0)}</div>
+                                    <div>{isAr ? 'الحوافز' : 'Bonuses'}: {numberFormatter.format(p.bonuses || 0)}</div>
                                     <div>{isAr ? 'الخصومات' : 'Penalties'}: {numberFormatter.format(p.penalties || 0)}</div>
+                                    <div>{isAr ? 'السلف' : 'Advances'}: {numberFormatter.format(p.advances || 0)}</div>
                                     <div className="col-span-2 font-semibold text-gray-800 dark:text-gray-100">
                                       {isAr ? 'الصافي' : 'Net'}: {numberFormatter.format(p.net_salary || 0)} {moneyLabel}
                                     </div>
@@ -1081,9 +1121,9 @@ export default function EmployeeProfile() {
                                               <input
                                                 type="number"
                                                 className="rounded-xl border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
-                                                value={payrollEdit.base_salary}
-                                                onChange={(e) => setPayrollEdit({ ...payrollEdit, base_salary: e.target.value })}
-                                                placeholder={isAr ? 'الراتب الأساسي' : 'Base salary'}
+                                                value={payrollEdit.monthly_salary}
+                                                onChange={(e) => setPayrollEdit({ ...payrollEdit, monthly_salary: e.target.value })}
+                                                placeholder={isAr ? 'الراتب الأساسي الشهري' : 'Monthly base salary'}
                                               />
                                               <input
                                                 type="number"
@@ -1116,7 +1156,16 @@ export default function EmployeeProfile() {
                                                 {saving ? (isAr ? 'جاري الحفظ' : 'Saving') : isAr ? 'حفظ التعديلات' : 'Save changes'}
                                               </button>
                                               <button
-                                                onClick={() => setPayrollEdit({ id: null, base_salary: '', penalties: '', bonuses: '', advances: '' })}
+                                                onClick={() =>
+                                                  setPayrollEdit({
+                                                    id: null,
+                                                    base_salary: '',
+                                                    monthly_salary: '',
+                                                    penalties: '',
+                                                    bonuses: '',
+                                                    advances: '',
+                                                  })
+                                                }
                                                 className="px-3 py-1.5 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
                                               >
                                                 {isAr ? 'إلغاء' : 'Cancel'}
@@ -1156,12 +1205,15 @@ export default function EmployeeProfile() {
                                 <thead>
                                   <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الشهر' : 'Month'}</th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الأساسي' : 'Base'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'أيام الحضور' : 'Attendance'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الأساسي الشهري' : 'Monthly base'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'أساسي مستحق' : 'Earned base'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الحوافز' : 'Bonuses'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الخصومات' : 'Penalties'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'السلف' : 'Advances'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الصافي' : 'Net'}</th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الحالة' : 'Status'}</th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الحالة' : 'Status'}</th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'دفع' : 'Payment'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الإغلاق' : 'Status'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الدفع' : 'Payment'}</th>
                                     {canManage && <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'إجراءات' : 'Actions'}</th>}
                                   </tr>
                                 </thead>
@@ -1169,8 +1221,12 @@ export default function EmployeeProfile() {
                                   {payrolls.map((p) => (
                                     <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{p.month}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(p.attendance_days || 0)}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(p.monthly_salary || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(p.base_salary || 0)}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(p.bonuses || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(p.penalties || 0)}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(p.advances || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{numberFormatter.format(p.net_salary || 0)} {moneyLabel}</td>
                                       <td className="py-2 px-2 whitespace-nowrap">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200">
@@ -1200,9 +1256,9 @@ export default function EmployeeProfile() {
                                                 <input
                                                   type="number"
                                                   className="rounded-lg border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
-                                                  value={payrollEdit.base_salary}
-                                                  onChange={(e) => setPayrollEdit({ ...payrollEdit, base_salary: e.target.value })}
-                                                  placeholder={isAr ? 'الراتب' : 'Base'}
+                                                  value={payrollEdit.monthly_salary}
+                                                  onChange={(e) => setPayrollEdit({ ...payrollEdit, monthly_salary: e.target.value })}
+                                                  placeholder={isAr ? 'الراتب الأساسي الشهري' : 'Monthly base'}
                                                 />
                                                 <input
                                                   type="number"
@@ -1235,7 +1291,7 @@ export default function EmployeeProfile() {
                                                   {saving ? (isAr ? 'جاري الحفظ' : 'Saving') : isAr ? 'حفظ' : 'Save'}
                                                 </button>
                                                 <button
-                                                  onClick={() => setPayrollEdit({ id: null, base_salary: '', penalties: '', bonuses: '', advances: '' })}
+                                                  onClick={() => setPayrollEdit({ id: null, base_salary: '', monthly_salary: '', penalties: '', bonuses: '', advances: '' })}
                                                   className="px-3 py-1 rounded-full border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
                                                 >
                                                   {isAr ? 'إلغاء' : 'Cancel'}
