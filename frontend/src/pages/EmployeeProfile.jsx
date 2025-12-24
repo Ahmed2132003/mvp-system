@@ -134,7 +134,7 @@ export default function EmployeeProfile() {
   const [employeeId, setEmployeeId] = useState(initialEmployeeId);  
   const [attendance, setAttendance] = useState([]);
   const [payrolls, setPayrolls] = useState([]);
-  const [ledger, setLedger] = useState([]);
+  const [ledger, setLedger] = useState([]);  
   const [loading, setLoading] = useState(true);
   const [editData, setEditData] = useState({
     salary: '',
@@ -142,7 +142,10 @@ export default function EmployeeProfile() {
     hire_date: '',
     store: null,
     branch: null,
-  });
+    user_name: '',
+    user_email: '',
+    user_phone: '',
+  });  
   const [stores, setStores] = useState([]);
   const [branches, setBranches] = useState([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -157,6 +160,14 @@ export default function EmployeeProfile() {
   });
   const [ledgerSaving, setLedgerSaving] = useState(false);
   const [markingPayrollId, setMarkingPayrollId] = useState(null);
+  const [payrollEdit, setPayrollEdit] = useState({
+    id: null,
+    base_salary: '',
+    penalties: '',
+    bonuses: '',
+    advances: '',
+  });
+  const [deletingPayrollId, setDeletingPayrollId] = useState(null);
 
   const canManage = user?.is_superuser || ['OWNER', 'MANAGER'].includes(user?.role);
 
@@ -200,6 +211,9 @@ export default function EmployeeProfile() {
         hire_date: res.data.hire_date ?? '',
         store: res.data.store ?? null,
         branch: res.data.branch ?? null,
+        user_name: res.data.user?.name ?? '',
+        user_email: res.data.user?.email ?? '',
+        user_phone: res.data.user?.phone ?? '',
       });
     } catch {
       notifyError(isAr ? 'فشل تحميل بيانات الموظف' : 'Failed to load employee data');
@@ -285,7 +299,7 @@ export default function EmployeeProfile() {
     if (!employeeId) return;
     try {
       setMarkingPayrollId(payrollId);
-      await api.post(`/employees/${employeeId}/mark_paid/`, { payroll_id: payrollId });
+      await api.post(`/employees/${employeeId}/mark_paid/`, { payroll_id: payrollId });      
       notifySuccess(isAr ? 'تم تعليم المرتب كمدفوع' : 'Marked payroll as paid');
       fetchPayrolls();
       fetchLedger();
@@ -296,11 +310,65 @@ export default function EmployeeProfile() {
     }
   };
 
+  const startEditPayroll = (payroll) => {
+    setPayrollEdit({
+      id: payroll.id,
+      base_salary: payroll.base_salary ?? '',
+      penalties: payroll.penalties ?? '',
+      bonuses: payroll.bonuses ?? '',
+      advances: payroll.advances ?? '',
+    });
+  };
+
+  const savePayrollEdit = async () => {
+    if (!payrollEdit.id || !employeeId) return;
+    if (Number(payrollEdit.base_salary) <= 0) {
+      notifyError(isAr ? 'الراتب الأساسي يجب أن يكون أكبر من صفر.' : 'Base salary must be greater than zero.');
+      return;
+    }
+    try {
+      setSaving(true);
+      await api.patch(`/employees/${employeeId}/update_payroll/`, {
+        payroll_id: payrollEdit.id,
+        base_salary: Number(payrollEdit.base_salary) || 0,
+        penalties: Number(payrollEdit.penalties) || 0,
+        bonuses: Number(payrollEdit.bonuses) || 0,
+        advances: Number(payrollEdit.advances) || 0,
+      });
+      notifySuccess(isAr ? 'تم تعديل كشف المرتب' : 'Payroll updated');
+      setPayrollEdit({ id: null, base_salary: '', penalties: '', bonuses: '', advances: '' });
+      fetchPayrolls();
+      fetchLedger();
+    } catch (err) {
+      console.error(err);
+      notifyError(isAr ? 'تعذر تعديل كشف المرتب' : 'Failed to update payroll');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deletePayroll = async (payrollId) => {
+    if (!employeeId || !payrollId) return;
+    if (!window.confirm(isAr ? 'سيتم حذف كشف المرتب، هل أنت متأكد؟' : 'Delete this payroll?')) return;
+    try {
+      setDeletingPayrollId(payrollId);
+      await api.post(`/employees/${employeeId}/delete_payroll/`, { payroll_id: payrollId });
+      notifySuccess(isAr ? 'تم حذف كشف المرتب' : 'Payroll deleted');
+      fetchPayrolls();
+      fetchLedger();
+    } catch (err) {
+      console.error(err);
+      notifyError(isAr ? 'تعذر حذف كشف المرتب' : 'Failed to delete payroll');
+    } finally {
+      setDeletingPayrollId(null);
+    }
+  };
+
   const addLedgerEntry = async () => {
     if (!employeeId) return;
     if (!ledgerForm.amount) {
       notifyError(isAr ? 'من فضلك أدخل قيمة صحيحة' : 'Please enter a valid amount');
-      return;
+      return;      
     }
     try {
       setLedgerSaving(true);
@@ -373,6 +441,10 @@ export default function EmployeeProfile() {
       notifyError(isAr ? 'لم يتم تحميل بيانات الموظف بعد' : 'Employee data not loaded yet');
       return;
     }
+    if (attendanceStats.totalDays > 0 && Number(editData.salary || 0) <= 0) {
+      notifyError(isAr ? 'حدد راتباً أساسياً قبل حفظ البيانات.' : 'Please set a base salary before saving.');
+      return;
+    }
     try {
       setSaving(true);
       await api.patch(`/employees/${targetId}/`, {        
@@ -381,12 +453,15 @@ export default function EmployeeProfile() {
         hire_date: editData.hire_date || null,
         store: editData.store || null,
         branch: editData.branch || null,
+        user_name: editData.user_name || '',
+        user_email: editData.user_email || undefined,
+        user_phone: editData.user_phone || '',
       });
       notifySuccess(isAr ? 'تم تحديث بيانات الموظف' : 'Employee updated');
       fetchEmployee();
     } catch (err) {
       console.error(err);
-      notifyError(isAr ? 'تعذر تحديث بيانات الموظف' : 'Failed to update employee');
+      notifyError(isAr ? 'تعذر تحديث بيانات الموظف' : 'Failed to update employee');      
     } finally {
       setSaving(false);
     }
@@ -729,10 +804,40 @@ export default function EmployeeProfile() {
 
                             <div className="mt-4 grid gap-4 md:grid-cols-2">
                               <label className="space-y-1 text-xs">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'اسم الموظف' : 'Employee name'}</span>
+                                <input
+                                  type="text"
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                  value={editData.user_name}
+                                  onChange={(e) => setEditData({ ...editData, user_name: e.target.value })}
+                                />
+                              </label>
+
+                              <label className="space-y-1 text-xs">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'البريد الإلكتروني' : 'Email'}</span>
+                                <input
+                                  type="email"
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                  value={editData.user_email}
+                                  onChange={(e) => setEditData({ ...editData, user_email: e.target.value })}
+                                />
+                              </label>
+
+                              <label className="space-y-1 text-xs">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'رقم الهاتف' : 'Phone'}</span>
+                                <input
+                                  type="tel"
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                  value={editData.user_phone}
+                                  onChange={(e) => setEditData({ ...editData, user_phone: e.target.value })}
+                                />
+                              </label>
+
+                              <label className="space-y-1 text-xs">
                                 <span className="text-gray-600 dark:text-gray-300">{isAr ? 'الراتب الشهري' : 'Monthly Salary'}</span>
                                 <input
                                   type="number"
-                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"                                  
                                   value={editData.salary}
                                   onChange={(e) => setEditData({ ...editData, salary: e.target.value })}
                                 />
@@ -915,6 +1020,24 @@ export default function EmployeeProfile() {
                             <button onClick={generatePayroll} className="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition">
                               {isAr ? 'احتساب مرتب جديد' : 'Generate New Payroll'}
                             </button>
+                            <button
+                              onClick={() => {
+                                setActiveTab('ledger');
+                                setLedgerForm((prev) => ({ ...prev, entry_type: 'BONUS' }));
+                              }}
+                              className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition"
+                            >
+                              {isAr ? 'إضافة حافز/مكافأة' : 'Add bonus'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setActiveTab('ledger');
+                                setLedgerForm((prev) => ({ ...prev, entry_type: 'PENALTY' }));
+                              }}
+                              className="px-3 py-2 rounded-xl bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition"
+                            >
+                              {isAr ? 'إضافة خصم' : 'Add deduction'}
+                            </button>
                           </div>
                         )}
 
@@ -950,11 +1073,83 @@ export default function EmployeeProfile() {
                                         {markingPayrollId === p.id ? (isAr ? 'جاري التعليم...' : 'Marking...') : isAr ? 'تعليم كمدفوع' : 'Mark as paid'}
                                       </button>
                                     )}
+                                    {canManage && (
+                                      <div className="col-span-2 space-y-2">
+                                        {payrollEdit.id === p.id ? (
+                                          <>
+                                            <div className="grid grid-cols-2 gap-2">
+                                              <input
+                                                type="number"
+                                                className="rounded-xl border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                                value={payrollEdit.base_salary}
+                                                onChange={(e) => setPayrollEdit({ ...payrollEdit, base_salary: e.target.value })}
+                                                placeholder={isAr ? 'الراتب الأساسي' : 'Base salary'}
+                                              />
+                                              <input
+                                                type="number"
+                                                className="rounded-xl border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                                value={payrollEdit.penalties}
+                                                onChange={(e) => setPayrollEdit({ ...payrollEdit, penalties: e.target.value })}
+                                                placeholder={isAr ? 'الخصومات' : 'Penalties'}
+                                              />
+                                              <input
+                                                type="number"
+                                                className="rounded-xl border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                                value={payrollEdit.bonuses}
+                                                onChange={(e) => setPayrollEdit({ ...payrollEdit, bonuses: e.target.value })}
+                                                placeholder={isAr ? 'الحوافز' : 'Bonuses'}
+                                              />
+                                              <input
+                                                type="number"
+                                                className="rounded-xl border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                                value={payrollEdit.advances}
+                                                onChange={(e) => setPayrollEdit({ ...payrollEdit, advances: e.target.value })}
+                                                placeholder={isAr ? 'السلف' : 'Advances'}
+                                              />
+                                            </div>
+                                            <div className="flex gap-2">
+                                              <button
+                                                onClick={savePayrollEdit}
+                                                disabled={saving}
+                                                className="px-3 py-1.5 rounded-xl bg-blue-600 text-white text-[11px] font-semibold hover:bg-blue-700 transition disabled:opacity-60"
+                                              >
+                                                {saving ? (isAr ? 'جاري الحفظ' : 'Saving') : isAr ? 'حفظ التعديلات' : 'Save changes'}
+                                              </button>
+                                              <button
+                                                onClick={() => setPayrollEdit({ id: null, base_salary: '', penalties: '', bonuses: '', advances: '' })}
+                                                className="px-3 py-1.5 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                                              >
+                                                {isAr ? 'إلغاء' : 'Cancel'}
+                                              </button>
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <div className="flex gap-2 flex-wrap">
+                                            {!p.is_paid && (
+                                              <button
+                                                onClick={() => startEditPayroll(p)}
+                                                className="px-3 py-1.5 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                                              >
+                                                {isAr ? 'تعديل كشف المرتب' : 'Edit payroll'}
+                                              </button>
+                                            )}
+                                            {!p.is_paid && (
+                                              <button
+                                                onClick={() => deletePayroll(p.id)}
+                                                disabled={deletingPayrollId === p.id}
+                                                className="px-3 py-1.5 rounded-xl border border-red-500 text-[11px] font-semibold text-red-600 hover:bg-red-50 transition dark:border-red-500 dark:text-red-300 dark:hover:bg-red-900/20 disabled:opacity-60"
+                                              >
+                                                {deletingPayrollId === p.id ? (isAr ? 'جار الحذف...' : 'Deleting...') : isAr ? 'حذف المرتب' : 'Delete payroll'}
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               ))}
                             </div>
-
                             {/* Desktop/tablet table */}
                             <div className="hidden md:block overflow-x-auto">
                               <table className="w-full text-xs">
@@ -965,10 +1160,12 @@ export default function EmployeeProfile() {
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الخصومات' : 'Penalties'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الصافي' : 'Net'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الحالة' : 'Status'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الحالة' : 'Status'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'دفع' : 'Payment'}</th>
+                                    {canManage && <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'إجراءات' : 'Actions'}</th>}
                                   </tr>
                                 </thead>
-                                <tbody>
+                                <tbody>                                  
                                   {payrolls.map((p) => (
                                     <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{p.month}</td>
@@ -995,10 +1192,83 @@ export default function EmployeeProfile() {
                                           <span className="text-[11px] text-red-600 dark:text-red-300">{isAr ? 'غير مدفوع' : 'Unpaid'}</span>
                                         )}
                                       </td>
+                                      {canManage && (
+                                        <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
+                                          {payrollEdit.id === p.id ? (
+                                            <div className="flex flex-col gap-2 text-[11px]">
+                                              <div className="grid grid-cols-2 gap-2">
+                                                <input
+                                                  type="number"
+                                                  className="rounded-lg border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                                  value={payrollEdit.base_salary}
+                                                  onChange={(e) => setPayrollEdit({ ...payrollEdit, base_salary: e.target.value })}
+                                                  placeholder={isAr ? 'الراتب' : 'Base'}
+                                                />
+                                                <input
+                                                  type="number"
+                                                  className="rounded-lg border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                                  value={payrollEdit.penalties}
+                                                  onChange={(e) => setPayrollEdit({ ...payrollEdit, penalties: e.target.value })}
+                                                  placeholder={isAr ? 'الخصومات' : 'Penalties'}
+                                                />
+                                                <input
+                                                  type="number"
+                                                  className="rounded-lg border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                                  value={payrollEdit.bonuses}
+                                                  onChange={(e) => setPayrollEdit({ ...payrollEdit, bonuses: e.target.value })}
+                                                  placeholder={isAr ? 'الحوافز' : 'Bonuses'}
+                                                />
+                                                <input
+                                                  type="number"
+                                                  className="rounded-lg border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                                  value={payrollEdit.advances}
+                                                  onChange={(e) => setPayrollEdit({ ...payrollEdit, advances: e.target.value })}
+                                                  placeholder={isAr ? 'السلف' : 'Advances'}
+                                                />
+                                              </div>
+                                              <div className="flex gap-2">
+                                                <button
+                                                  onClick={savePayrollEdit}
+                                                  disabled={saving}
+                                                  className="px-3 py-1 rounded-full bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                                >
+                                                  {saving ? (isAr ? 'جاري الحفظ' : 'Saving') : isAr ? 'حفظ' : 'Save'}
+                                                </button>
+                                                <button
+                                                  onClick={() => setPayrollEdit({ id: null, base_salary: '', penalties: '', bonuses: '', advances: '' })}
+                                                  className="px-3 py-1 rounded-full border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                                                >
+                                                  {isAr ? 'إلغاء' : 'Cancel'}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="flex gap-2 flex-wrap">
+                                              {!p.is_paid && (
+                                                <button
+                                                  onClick={() => startEditPayroll(p)}
+                                                  className="px-3 py-1 rounded-full border border-gray-200 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                                                >
+                                                  {isAr ? 'تعديل' : 'Edit'}
+                                                </button>
+                                              )}
+                                              {!p.is_paid && (
+                                                <button
+                                                  onClick={() => deletePayroll(p.id)}
+                                                  disabled={deletingPayrollId === p.id}
+                                                  className="px-3 py-1 rounded-full border border-red-500 text-[11px] font-semibold text-red-600 hover:bg-red-50 transition dark:border-red-500 dark:text-red-300 dark:hover:bg-red-900/20 disabled:opacity-60"
+                                                >
+                                                  {deletingPayrollId === p.id ? (isAr ? 'جار الحذف...' : 'Deleting...') : isAr ? 'حذف' : 'Delete'}
+                                                </button>
+                                              )}
+                                            </div>
+                                          )}
+                                        </td>
+                                      )}
                                     </tr>
                                   ))}
                                 </tbody>
-                              </table>
+                              </table>                              
                             </div>
                           </>
                         )}

@@ -280,11 +280,14 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         except Exception:
             return Response({"detail": "تنسيق الشهر غير صحيح. استخدم YYYY-MM أو YYYY-MM-DD."}, status=400)
 
-        payroll = generate_payroll(
-            employee=self.get_object(),
-            month_date=month_date,
-        )
-        
+        try:
+            payroll = generate_payroll(
+                employee=self.get_object(),
+                month_date=month_date,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+                
         return Response({
             "id": payroll.id,
             "month": payroll.month,
@@ -300,7 +303,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         payroll_id = request.data.get("payroll_id")
         target_month = request.data.get("month")
         employee = self.get_object()
-
+        
         payroll = None
         if payroll_id:
             payroll = PayrollPeriod.objects.filter(id=payroll_id, employee=employee).first()
@@ -343,11 +346,79 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             }
         )
 
+    @action(detail=True, methods=["post", "patch"])
+    def update_payroll(self, request, pk=None):
+        employee = self.get_object()
+        payroll_id = request.data.get("payroll_id")
+
+        if not payroll_id:
+            return Response({"detail": "payroll_id مطلوب"}, status=400)
+
+        payroll = PayrollPeriod.objects.filter(id=payroll_id, employee=employee).first()
+        if not payroll:
+            return Response({"detail": "كشف المرتب غير موجود."}, status=404)
+
+        if payroll.is_paid:
+            return Response({"detail": "لا يمكن تعديل كشف مرتب تم دفعه."}, status=400)
+
+        base_salary = request.data.get("base_salary", payroll.base_salary)
+        penalties = request.data.get("penalties", payroll.penalties)
+        bonuses = request.data.get("bonuses", payroll.bonuses)
+        advances = request.data.get("advances", payroll.advances)
+
+        try:
+            base_salary = float(base_salary)
+            penalties = float(penalties)
+            bonuses = float(bonuses)
+            advances = float(advances)
+        except (TypeError, ValueError):
+            return Response({"detail": "قيم غير صالحة."}, status=400)
+
+        if base_salary <= 0:
+            return Response({"detail": "يجب إدخال راتب أساسي صالح."}, status=400)
+
+        payroll.base_salary = base_salary
+        payroll.penalties = penalties
+        payroll.bonuses = bonuses
+        payroll.advances = advances
+        payroll.calculate_net_salary()
+        payroll.save(update_fields=["base_salary", "penalties", "bonuses", "advances", "net_salary"])
+
+        return Response({
+            "id": payroll.id,
+            "month": payroll.month,
+            "base_salary": payroll.base_salary,
+            "penalties": payroll.penalties,
+            "bonuses": payroll.bonuses,
+            "advances": payroll.advances,
+            "net_salary": payroll.net_salary,
+            "is_paid": payroll.is_paid,
+        })
+
+    @action(detail=True, methods=["post"])
+    def delete_payroll(self, request, pk=None):
+        employee = self.get_object()
+        payroll_id = request.data.get("payroll_id")
+
+        if not payroll_id:
+            return Response({"detail": "payroll_id مطلوب"}, status=400)
+
+        payroll = PayrollPeriod.objects.filter(id=payroll_id, employee=employee).first()
+        if not payroll:
+            return Response({"detail": "كشف المرتب غير موجود."}, status=404)
+
+        if payroll.is_paid:
+            return Response({"detail": "لا يمكن حذف كشف مرتب تم دفعه."}, status=400)
+
+        payroll.delete()
+        return Response(status=204)
+
     @action(detail=True, methods=["post"])
     def ledger_entry(self, request, pk=None):
         """
         ✅ Add bonus/penalty/advance entry for the employee.
         """
+                
         employee = self.get_object()
         entry_type = request.data.get("entry_type")
         amount = request.data.get("amount")

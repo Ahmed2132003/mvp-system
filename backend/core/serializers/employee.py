@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 from django.conf import settings
-from core.models import Employee
+from core.models import Employee, User
 from branches.models import Branch
 from attendance.models import AttendanceLog
 from .user import UserSerializer
@@ -12,6 +12,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
     # User info
     user = UserSerializer(read_only=True)
 
+    # Writable user fields
+    user_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    user_email = serializers.EmailField(write_only=True, required=False)
+    user_phone = serializers.CharField(write_only=True, required=False, allow_blank=True)
     store_name = serializers.CharField(source='store.name', read_only=True)
     branch = serializers.PrimaryKeyRelatedField(
         queryset=Branch.objects.all(), allow_null=True, required=False
@@ -30,9 +34,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "user",
+            "user_name",
+            "user_email",
+            "user_phone",
             "store",
             "store_name",
-            "branch",
+            "branch",            
             "branch_name",
             "hire_date",
             "salary",
@@ -48,14 +55,50 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         store = attrs.get("store") or getattr(self.instance, "store", None)
         branch = attrs.get("branch") or getattr(self.instance, "branch", None)
-
+        
         if branch and store and branch.store_id != store.id:
             raise serializers.ValidationError({
                 "branch": "يجب أن يكون الفرع تابعًا لنفس المتجر."
             })
 
         return attrs
-    
+
+    def validate_user_email(self, value):
+        if not value:
+            return value
+
+        qs = User.objects.filter(email=value)
+        if self.instance and getattr(self.instance, "user_id", None):
+            qs = qs.exclude(id=self.instance.user_id)
+
+        if qs.exists():
+            raise serializers.ValidationError("البريد الإلكتروني مستخدم بالفعل.")
+
+        return value
+
+    def _update_user(self, instance, validated_data):
+        user_data = {}
+
+        if "user_name" in validated_data:
+            user_data["name"] = validated_data.pop("user_name")
+
+        if "user_email" in validated_data and validated_data.get("user_email"):
+            user_data["email"] = validated_data.pop("user_email")
+
+        if "user_phone" in validated_data:
+            user_data["phone"] = validated_data.pop("user_phone")
+
+        if user_data:
+            for field, value in user_data.items():
+                setattr(instance.user, field, value)
+            instance.user.save(update_fields=list(user_data.keys()))
+
+        return validated_data
+
+    def update(self, instance, validated_data):
+        validated_data = self._update_user(instance, validated_data)
+        return super().update(instance, validated_data)
+        
     def get_store_qr_attendance_url(self, obj):
         if obj.store and obj.store.qr_attendance:
             return f"{settings.SITE_URL}{obj.store.qr_attendance.url}"
