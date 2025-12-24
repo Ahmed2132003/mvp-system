@@ -112,6 +112,7 @@ export default function EmployeeProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const initialEmployeeId = id && id !== 'me' ? id : null;
 
   // theme & language (same pattern as Dashboard)
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
@@ -122,7 +123,7 @@ export default function EmployeeProfile() {
 
   const [activeTab, setActiveTab] = useState('info');
   const [employee, setEmployee] = useState(null);
-  const [employeeId, setEmployeeId] = useState(id);
+  const [employeeId, setEmployeeId] = useState(initialEmployeeId);  
   const [attendance, setAttendance] = useState([]);
   const [payrolls, setPayrolls] = useState([]);
   const [ledger, setLedger] = useState([]);
@@ -154,7 +155,7 @@ export default function EmployeeProfile() {
   const numberFormatter = useMemo(() => new Intl.NumberFormat(isAr ? 'ar-EG' : 'en-EG'), [isAr]);
 
   useEffect(() => {
-    setEmployeeId(id);
+    setEmployeeId(id && id !== 'me' ? id : null);    
   }, [id]);
 
   // Apply theme to <html> + persist
@@ -176,7 +177,7 @@ export default function EmployeeProfile() {
 
   const fetchEmployee = useCallback(async () => {
     try {
-      const resolvedId = id || employeeId || 'me';
+      const resolvedId = employeeId || id || 'me';      
       const endpoint = resolvedId === 'me' ? '/employees/me/' : `/employees/${resolvedId}/`;
       
       const res = await api.get(endpoint);
@@ -184,7 +185,7 @@ export default function EmployeeProfile() {
       if (res.data?.id) {
         setEmployeeId(res.data.id);
       }
-            
+
       setEditData({
         salary: res.data.salary ?? '',
         advances: res.data.advances ?? '',
@@ -255,11 +256,16 @@ export default function EmployeeProfile() {
   }, []);
 
   const generatePayroll = async () => {
+        const targetId = employeeId || id;
+    if (!targetId || targetId === 'me') {
+      notifyError(isAr ? 'لم يتم تحميل بيانات الموظف بعد' : 'Employee data not loaded yet');
+      return;
+    }
     try {
       const month = prompt(isAr ? 'أدخل أول يوم في الشهر (YYYY-MM-DD)' : 'Enter first day of month (YYYY-MM-DD)');
       if (!month) return;
 
-      await api.post(`/employees/${id}/generate_payroll/`, { month });
+      await api.post(`/employees/${targetId}/generate_payroll/`, { month });      
       notifySuccess(isAr ? 'تم احتساب المرتب' : 'Payroll generated');
       fetchPayrolls();
     } catch {
@@ -354,9 +360,14 @@ export default function EmployeeProfile() {
   }, [ledger]);
 
   const updateEmployee = async () => {
+        const targetId = employeeId || id;
+    if (!targetId || targetId === 'me') {
+      notifyError(isAr ? 'لم يتم تحميل بيانات الموظف بعد' : 'Employee data not loaded yet');
+      return;
+    }
     try {
       setSaving(true);
-      await api.patch(`/employees/${id}/`, {
+      await api.patch(`/employees/${targetId}/`, {        
         salary: Number(editData.salary) || 0,
         advances: Number(editData.advances) || 0,
         hire_date: editData.hire_date || null,
@@ -374,12 +385,17 @@ export default function EmployeeProfile() {
   };
 
   const terminateEmployee = async () => {
+    const targetId = employeeId || id;
+    if (!targetId || targetId === 'me') {
+      notifyError(isAr ? 'لم يتم تحميل بيانات الموظف بعد' : 'Employee data not loaded yet');
+      return;
+    }
     if (!window.confirm(isAr ? 'هل أنت متأكد من فصل هذا الموظف؟' : 'Are you sure you want to terminate this employee?'))
       return;
 
     try {
       setDeleting(true);
-      await api.delete(`/employees/${id}/`);
+      await api.delete(`/employees/${targetId}/`);      
       notifySuccess(isAr ? 'تم فصل الموظف' : 'Employee terminated');
       navigate('/employees');
     } catch (err) {
