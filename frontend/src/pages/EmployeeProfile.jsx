@@ -415,10 +415,7 @@ export default function EmployeeProfile() {
       (acc, entry) => {
         if (entry.type === 'BONUS') acc.bonus += Number(entry.amount || 0);
         if (entry.type === 'PENALTY') acc.penalty += Number(entry.amount || 0);
-        if (entry.type === 'ADVANCE') {
-          acc.advance += Number(entry.amount || 0);
-          acc.penalty += Number(entry.amount || 0); // advances are deductions
-        }
+        if (entry.type === 'ADVANCE') acc.advance += Number(entry.amount || 0);
         return acc;
       },
       { bonus: 0, penalty: 0, advance: 0 }
@@ -438,7 +435,7 @@ export default function EmployeeProfile() {
     const attendanceDays = targetPayroll?.attendance_days ?? totalDays;
     const dailyRate = (Number(monthlySalary) || 0) / 30;
     const earnedBase = targetPayroll?.base_salary ?? attendanceDays * dailyRate;
-    const advancesTotal = targetPayroll?.advances ?? employee?.advances ?? 0;
+    const advancesTotal = Number(targetPayroll?.advances ?? ledgerTotals.advance ?? employee?.advances ?? 0);
     const netSalary =
       targetPayroll?.net_salary ??
       Math.max(earnedBase + ledgerTotals.bonus - ledgerTotals.penalty - advancesTotal, 0);
