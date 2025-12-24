@@ -18,12 +18,125 @@ from core.models import (
 )
 from attendance.models import AttendanceLog
 
+
+# =========================
+# Payroll computation helpers (FINAL logic)
+# =========================
+from decimal import Decimal
+from django.db.models import Sum
+
+
+def _count_attendance_days(employee_id, month_date):
+    """Count DISTINCT attendance days for the employee within that month."""
+    start = month_date.replace(day=1)
+    # end as first day of next month
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+
+    qs = AttendanceLog.objects.filter(employee_id=employee_id)
+
+    # Prefer work_date if exists
+    if hasattr(AttendanceLog, "work_date"):
+        return qs.filter(work_date__gte=start, work_date__lt=end).values("work_date").distinct().count()
+
+    # Fallback to check_in date if exists
+    if hasattr(AttendanceLog, "check_in"):
+        return qs.filter(check_in__date__gte=start, check_in__date__lt=end).values("check_in__date").distinct().count()
+
+    return 0
+
+
+def _sum_month_ledger(employee_id, month_date, entry_type):
+    start = month_date.replace(day=1)
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+
+    return Decimal(
+        EmployeeLedger.objects.filter(
+            employee_id=employee_id,
+            entry_type=entry_type,
+            payout_date__gte=start,
+            payout_date__lt=end,
+        ).aggregate(s=Sum("amount"))["s"] or 0
+    )
+
+
+def generate_payroll(*, employee, month_date):
+    """
+    FINAL required logic:
+      daily_rate  = monthly_salary / 30
+      earned_base = attendance_days * daily_rate
+      net_salary  = earned_base + bonuses - penalties - advances
+      net_salary minimum 0
+
+    NOTE:
+      - We keep كلمة "الراتب الأساسي" كما هي (employee.salary / payroll.monthly_salary).
+      - "الراتب المستحق" = earned_base (stored in payroll.base_salary).
+      - عند الدفع/إنشاء مرتب: يتم الاعتماد على payroll.net_salary فقط.
+    """
+    month_date = month_date.replace(day=1)
+
+    # If exists, just return it (avoid duplicate)
+    existing = PayrollPeriod.objects.filter(employee=employee, month=month_date).first()
+    if existing:
+        # Ensure stored values are consistent (recalculate if not paid)
+        if not existing.is_paid:
+            attendance_days = existing.attendance_days or _count_attendance_days(employee.id, month_date)
+            monthly_salary = Decimal(existing.monthly_salary or getattr(employee, "salary", 0) or 0)
+            if monthly_salary <= 0:
+                raise ValueError("يجب إدخال راتب أساسي صالح.")
+            daily_rate = monthly_salary / Decimal(30)
+            earned_base = daily_rate * Decimal(attendance_days)
+
+            penalties = Decimal(existing.penalties or 0)
+            bonuses = Decimal(existing.bonuses or 0)
+            advances = Decimal(existing.advances or 0)
+
+            existing.attendance_days = int(attendance_days)
+            existing.monthly_salary = monthly_salary
+            existing.base_salary = earned_base  # المستحق
+            existing.net_salary = max(earned_base + bonuses - penalties - advances, Decimal("0.00"))
+            existing.save(update_fields=["attendance_days","monthly_salary","base_salary","net_salary"])
+        return existing
+
+    monthly_salary = Decimal(getattr(employee, "salary", 0) or 0)
+    if monthly_salary <= 0:
+        raise ValueError("يجب إدخال راتب أساسي صالح.")
+
+    attendance_days = _count_attendance_days(employee.id, month_date)
+    daily_rate = monthly_salary / Decimal(30)
+    earned_base = daily_rate * Decimal(attendance_days)
+
+    # monthly totals
+    penalties = _sum_month_ledger(employee.id, month_date, "PENALTY")
+    bonuses = _sum_month_ledger(employee.id, month_date, "BONUS")
+    advances = _sum_month_ledger(employee.id, month_date, "ADVANCE")
+
+    net_salary = max(earned_base + bonuses - penalties - advances, Decimal("0.00"))
+
+    payroll = PayrollPeriod.objects.create(
+        employee=employee,
+        month=month_date,
+        monthly_salary=monthly_salary,
+        attendance_days=int(attendance_days),
+        base_salary=earned_base,  # المستحق
+        penalties=penalties,
+        bonuses=bonuses,
+        advances=advances,
+        net_salary=net_salary,
+    )
+    return payroll
+
 from core.serializers.auth import RegisterUserSerializer
 from core.serializers.employee import EmployeeSerializer
 from core.serializers.user import UserSerializer
 
 from core.permissions import IsManager, IsOwner
-from core.services.payroll import generate_payroll
+from core.services.payroll import generate_payroll as generate_payroll_service
 
 import calendar
 
