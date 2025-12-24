@@ -176,12 +176,15 @@ export default function EmployeeProfile() {
 
   const fetchEmployee = useCallback(async () => {
     try {
-      const endpoint = id === 'me' ? '/employees/me/' : `/employees/${employeeId || id}/`;
+      const resolvedId = id || employeeId || 'me';
+      const endpoint = resolvedId === 'me' ? '/employees/me/' : `/employees/${resolvedId}/`;
+      
       const res = await api.get(endpoint);
       setEmployee(res.data);
       if (res.data?.id) {
         setEmployeeId(res.data.id);
       }
+            
       setEditData({
         salary: res.data.salary ?? '',
         advances: res.data.advances ?? '',

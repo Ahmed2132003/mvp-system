@@ -168,14 +168,6 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/employees/me"
-              element={
-                <ProtectedRoute>
-                  <EmployeeProfile />
-                </ProtectedRoute>
-              }
-            />
 
             <Route
               path="/accounting"
@@ -194,7 +186,7 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
