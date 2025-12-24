@@ -435,30 +435,28 @@ export default function EmployeeProfile() {
     const currentPayroll = payrolls.find((p) => (p.month || '').startsWith(selectedMonth));
     const targetPayroll = currentPayroll || latestPayroll;
 
-    const monthlySalary = targetPayroll?.monthly_salary ?? employee?.salary ?? 0;
+    const monthlySalary = Number(targetPayroll?.monthly_salary ?? employee?.salary ?? 0);
 
-// ✅ attendanceDays: from payroll snapshot if exists, otherwise count distinct days locally (not logs length)
-const attendanceDays = targetPayroll?.attendance_days ?? totalDays;
+    // ✅ Always prioritize live attendance; fall back to payroll snapshot only if nothing is logged
+    const attendanceDays = totalDays || Number(targetPayroll?.attendance_days ?? 0);
 
-// ✅ daily rate based on (الراتب الأساسي الشهري / 30)
-const dailyRate = (Number(monthlySalary) || 0) / 30;
+    // ✅ daily rate based on (الراتب الأساسي الشهري / 30)
+    const dailyRate = (Number(monthlySalary) || 0) / 30;
 
-// ✅ الراتب المستحق (earned base) ALWAYS computed من الحضور (حتى لو payroll قديم كان غلط)
-const earnedBase = attendanceDays * dailyRate;
+    // ✅ الراتب المستحق (earned base) ALWAYS computed من الحضور (حتى لو payroll قديم كان غلط)
+    const earnedBase = attendanceDays * dailyRate;
 
-// ✅ اجمالي الخصومات/السلف/الحوافز: خليك consistent
-const penaltiesTotal = targetPayroll?.penalties ?? ledgerTotals.penalty ?? 0;
-const bonusesTotal = targetPayroll?.bonuses ?? ledgerTotals.bonus ?? 0;
-const advancesTotal = targetPayroll?.advances ?? ledgerTotals.advance ?? employee?.advances ?? 0;
+    // ✅ اجمالي الخصومات/السلف/الحوافز: خليك consistent مع شهر الشاشة الحالي
+    const penaltiesTotal = Number(ledgerTotals.penalty ?? targetPayroll?.penalties ?? 0);
+    const bonusesTotal = Number(ledgerTotals.bonus ?? targetPayroll?.bonuses ?? 0);
+    const advancesTotal = Number(ledgerTotals.advance ?? employee?.advances ?? targetPayroll?.advances ?? 0);
 
-// ✅ صافي المستحق = الراتب المستحق + الحوافز - الخصومات - السلف (حد أدنى 0)
-const netSalary =
-  targetPayroll?.net_salary ??
-  Math.max(earnedBase + bonusesTotal - penaltiesTotal - advancesTotal, 0);
+    // ✅ صافي المستحق = الراتب المستحق + الحوافز - الخصومات - السلف (حد أدنى 0)
+    const computedNet = Math.max(earnedBase + bonusesTotal - penaltiesTotal - advancesTotal, 0);
+    const netSalary = targetPayroll?.is_paid ? Number(targetPayroll.net_salary ?? 0) : computedNet;
 
-return { totalDays, totalLate, totalPenalties, missingCheckouts, netSalary, monthlySalary, attendanceDays, earnedBase };
+    return { totalDays, totalLate, totalPenalties, missingCheckouts, netSalary, monthlySalary, attendanceDays, earnedBase };
   }, [attendance, payrolls, employee, selectedMonth, ledgerTotals]);
-
   const updateEmployee = async () => {
         const targetId = employeeId || id;
     if (!targetId || targetId === 'me') {
