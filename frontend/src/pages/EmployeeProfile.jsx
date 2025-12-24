@@ -87,15 +87,23 @@ function SidebarNav({ lang }) {
       )}
 
       {!canManageNav && (
-        <Link
-          to="/employees/me"
-          className="flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
-        >
-          <span>{isAr ? 'ملفي' : 'My Profile'}</span>
-          <span className="text-xs bg-blue-100 px-2 py-0.5 rounded-full dark:bg-blue-800/70">
-            {isAr ? 'الآن' : 'Now'}
-          </span>
-        </Link>
+        <>
+          <Link
+            to="/dashboard"
+            className="flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
+          >
+            {isAr ? 'الداشبورد' : 'Dashboard'}
+          </Link>
+          <Link
+            to="/employees/me"
+            className="flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
+          >
+            <span>{isAr ? 'ملفي' : 'My Profile'}</span>
+            <span className="text-xs bg-blue-100 px-2 py-0.5 rounded-full dark:bg-blue-800/70">
+              {isAr ? 'الآن' : 'Now'}
+            </span>
+          </Link>
+        </>
       )}
     </>
   );

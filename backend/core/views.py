@@ -267,15 +267,24 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 
     @action(detail=True, methods=['post'])
     def generate_payroll(self, request, pk=None):
-        month = request.data.get('month')
+        month = (request.data.get('month') or "").strip()
         if not month:
             return Response({"detail": "month مطلوب"}, status=400)
 
+        try:
+            if len(month) == 7:  # YYYY-MM
+                year, month_num = [int(p) for p in month.split("-")]
+                month_date = timezone.datetime(year, month_num, 1).date()
+            else:
+                month_date = timezone.datetime.fromisoformat(month).date().replace(day=1)
+        except Exception:
+            return Response({"detail": "تنسيق الشهر غير صحيح. استخدم YYYY-MM أو YYYY-MM-DD."}, status=400)
+
         payroll = generate_payroll(
             employee=self.get_object(),
-            month_date=timezone.datetime.strptime(month, "%Y-%m-%d").date()
+            month_date=month_date,
         )
-
+        
         return Response({
             "id": payroll.id,
             "month": payroll.month,
