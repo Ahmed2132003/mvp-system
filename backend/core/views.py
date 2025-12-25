@@ -67,16 +67,17 @@ def _sum_month_ledger(employee_id, month_date, entry_type):
 
 def generate_payroll(*, employee, month_date):
     """
-    FINAL required logic:
-      daily_rate  = monthly_salary / 30
+    FINAL required logic (راتب يومي):
+      daily_rate  = employee.salary (راتب اليوم الواحد)
+      monthly_salary = daily_rate * 30
       earned_base = attendance_days * daily_rate
       net_salary  = earned_base + bonuses - penalties - advances
       
     NOTE:
-      - We keep كلمة "الراتب الأساسي" كما هي (employee.salary / payroll.monthly_salary).
+      - نحتفظ بحقل monthly_salary كـ snapshot شهري (اليومي * 30).
       - "الراتب المستحق" = earned_base (stored in payroll.base_salary).
       - عند الدفع/إنشاء مرتب: يتم الاعتماد على payroll.net_salary فقط.
-    """
+    """    
     month_date = month_date.replace(day=1)
 
     # If exists, just return it (avoid duplicate)
@@ -85,12 +86,12 @@ def generate_payroll(*, employee, month_date):
         # Ensure stored values are consistent (recalculate if not paid)
         if not existing.is_paid:
             attendance_days = existing.attendance_days or _count_attendance_days(employee.id, month_date)
-            monthly_salary = Decimal(existing.monthly_salary or getattr(employee, "salary", 0) or 0)
-            if monthly_salary <= 0:
+            daily_salary = Decimal(getattr(employee, "salary", 0) or (existing.monthly_salary or 0) / Decimal(30))
+            if daily_salary <= 0:
                 raise ValueError("يجب إدخال راتب أساسي صالح.")
-            daily_rate = monthly_salary / Decimal(30)
-            earned_base = daily_rate * Decimal(attendance_days)
-
+            monthly_salary = daily_salary * Decimal(30)
+            earned_base = daily_salary * Decimal(attendance_days)
+            
             penalties = Decimal(existing.penalties or 0)
             bonuses = Decimal(existing.bonuses or 0)
             advances = Decimal(existing.advances or 0)
@@ -496,18 +497,22 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if monthly_salary <= 0:
             return Response({"detail": "يجب إدخال راتب أساسي صالح."}, status=400)
 
-        # إعادة احتساب الأساس المستحق بناءً على أيام الحضور
-        if payroll.attendance_days and monthly_salary:
-            base_salary = (monthly_salary / 30) * payroll.attendance_days
+        # monthly_salary هنا هو الراتب اليومي ويتم تخزين snapshot شهري = اليومي × 30
+        daily_salary = Decimal(monthly_salary)
+        monthly_snapshot = daily_salary * Decimal(30)
+
+        # إعادة احتساب الأساس المستحق بناءً على أيام الحضور بالراتب اليومي
+        if payroll.attendance_days and daily_salary:
+            base_salary = float(daily_salary * Decimal(payroll.attendance_days))
 
         payroll.base_salary = base_salary
-        payroll.monthly_salary = monthly_salary
+        payroll.monthly_salary = monthly_snapshot
         payroll.penalties = penalties
         payroll.bonuses = bonuses
         payroll.advances = advances
         payroll.calculate_net_salary()
         payroll.save(update_fields=["base_salary", "monthly_salary", "penalties", "bonuses", "advances", "net_salary"])
-
+        
         return Response({
             "id": payroll.id,
             "month": payroll.month,

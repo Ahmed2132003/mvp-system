@@ -749,11 +749,9 @@ def expense_summary(request):
 
         payroll_total = Decimal("0")
         for row in attendance_rows:
-            salary = row.get("employee__salary") or Decimal("0")
+            daily_salary = row.get("employee__salary") or Decimal("0")            
             days = row.get("days") or 0
-            daily_rate = salary / Decimal("30")
-            payroll_total += daily_rate * days
-
+            payroll_total += daily_salary * days
         purchase_qs = (
             InventoryMovement.objects.filter(movement_type="IN", change__gt=0, **purchase_filter)
             .annotate(
@@ -959,16 +957,16 @@ def api_accounting(request):
             late_minutes = int(att_row.get("late_minutes") or 0)
             worked_minutes = int(att_row.get("total_minutes") or 0)
 
-            base_salary = meta["salary"]
-            daily_rate = (base_salary / Decimal("30")) if base_salary else Decimal("0")
-            attendance_value = daily_rate * Decimal(days)
-
+            daily_salary = meta["salary"]
+            monthly_snapshot = daily_salary * Decimal("30")
+            attendance_value = daily_salary * Decimal(days)
+            
             bonuses = ledger_map[emp_id].get("BONUS", Decimal("0"))
             penalties = ledger_map[emp_id].get("PENALTY", Decimal("0"))
             advances = ledger_map[emp_id].get("ADVANCE", Decimal("0"))
 
-            net_salary = attendance_value + bonuses + advances - penalties
-
+            net_salary = attendance_value + bonuses - penalties - advances
+            
             attendance_value_total += attendance_value
             bonuses_total += bonuses
             penalties_total += penalties
@@ -979,8 +977,8 @@ def api_accounting(request):
                 {
                     "employee_id": emp_id,
                     "employee_name": meta["employee_name"],
-                    "base_salary": float(base_salary),
-                    "daily_rate": float(daily_rate),
+                    "base_salary": float(monthly_snapshot),
+                    "daily_rate": float(daily_salary),                    
                     "attendance_days": days,
                     "attendance_value": float(attendance_value),
                     "late_minutes": late_minutes,
@@ -992,8 +990,8 @@ def api_accounting(request):
                 }
             )
 
-        payroll_total = attendance_value_total + bonuses_total + advances_total - penalties_total
-
+        payroll_total = attendance_value_total + bonuses_total - penalties_total - advances_total
+        
         purchase_qs = InventoryMovement.objects.filter(movement_type="IN", change__gt=0, **purchase_filter).select_related(
             "item"
         )

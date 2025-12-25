@@ -784,8 +784,8 @@ export default function Accounting() {
                                 {isAr ? 'أيام الحضور' : 'Days'}
                               </th>
                               <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
-                                {isAr ? 'الراتب الأساسي' : 'Base'}
-                              </th>
+                                {isAr ? 'الأساس الشهري (يومي × 30)' : 'Monthly base (daily × 30)'}
+                              </th>                              
                               <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
                                 {isAr ? 'أجر اليوم' : 'Daily'}
                               </th>

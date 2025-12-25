@@ -533,11 +533,10 @@ export default function EmployeeAttendance() {
                           (ID: {status.employee?.store || '—'})
                         </span>
                       </p>
-                      <p className="text-xs text-gray-600 mt-1 dark:text-gray-300">
-                        {t('الراتب الأساسي:', 'Base salary:')} {status.employee?.salary || 0}{' '}
+                      <p className="text-xs text-gray-600 mt-1 dark:text-gray-300">␊
+                        {t('الراتب اليومي:', 'Daily salary:')} {status.employee?.salary || 0}{' '}
                         {t('ج.م', 'EGP')}
                       </p>
-
                       {status.active_log ? (
                         <div className="mt-3 text-[11px] text-blue-700 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-100">
                           {t('جلسة نشطة منذ:', 'Active session since:')}{' '}
@@ -635,10 +634,9 @@ export default function EmployeeAttendance() {
                   {status?.month?.daily_rate?.toFixed?.(2) ?? '0.00'} {t('ج.م', 'EGP')}
                 </p>
                 <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
-                  {t('(الراتب ÷ 30 يوماً)', '(Salary ÷ 30 days)')}
+                  {t('راتب يومي مباشر بدون قسمة على 30', 'Direct daily salary (no /30)')}
                 </p>
               </div>
-
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 dark:bg-slate-900 dark:border-slate-800">
                 <p className="text-gray-500 dark:text-gray-400">{t('قيمة أيام الحضور', 'Attendance value')}</p>
                 <p className="text-lg font-bold text-gray-900 mt-1 dark:text-gray-50">

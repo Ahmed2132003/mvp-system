@@ -111,12 +111,13 @@ def generate_payroll(*, employee, month_date: date) -> PayrollPeriod:
     """
     Generate (or return existing) PayrollPeriod for employee/month with the logic you requested:
 
-    daily_rate      = monthly_salary / 30
+    daily_rate      = employee.salary (راتب اليوم)
+    monthly_salary  = daily_rate * 30  (snapshot)
     base_salary     = attendance_days * daily_rate
     net_salary      = base_salary + bonuses - penalties - advances
     net_salary min  = 0
 
-    Also stores snapshots: attendance_days, monthly_salary, total_work_minutes, total_late_minutes.
+    Also stores snapshots: attendance_days, monthly_salary, total_work_minutes, total_late_minutes.    
     """
     if not month_date:
         raise ValueError("month_date مطلوب")
@@ -129,23 +130,23 @@ def generate_payroll(*, employee, month_date: date) -> PayrollPeriod:
         # Do not overwrite a paid payroll.
         return existing
 
-    monthly_salary = Decimal(getattr(employee, "salary", 0) or 0)
-    if monthly_salary <= 0:
+    daily_salary = Decimal(getattr(employee, "salary", 0) or 0)
+    if daily_salary <= 0:
         raise ValueError("يجب إدخال راتب أساسي صالح.")
 
     attendance_days = _count_attendance_days(employee.id, start, end_exclusive)
     total_work_minutes, total_late_minutes = _sum_minutes(employee.id, start, end_exclusive)
 
-    daily_rate = (monthly_salary / Decimal(30))
-    base_salary = (daily_rate * Decimal(attendance_days))
-
+    monthly_salary = daily_salary * Decimal(30)
+    base_salary = daily_salary * Decimal(attendance_days)
+    
     totals = _ledger_totals(employee.id, start, end_exclusive)
     penalties = totals["penalties"]
     bonuses = totals["bonuses"]
     advances = totals["advances"]
 
     net_salary = base_salary + bonuses - penalties - advances
-    
+            
     payroll = PayrollPeriod.objects.create(
         employee=employee,
         month=month_date,
