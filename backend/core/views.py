@@ -372,11 +372,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 "base_salary": p.base_salary,
                 "monthly_salary": p.monthly_salary,
                 "penalties": p.penalties,
+                "late_penalties": getattr(p, "late_penalties", 0),
                 "bonuses": p.bonuses,
                 "advances": p.advances,
                 "net_salary": p.net_salary,
                 "is_locked": p.is_locked,                
-                "is_paid": p.is_paid,
+                "is_paid": p.is_paid,                
                 "paid_at": p.paid_at,
                 "paid_by": p.paid_by_id,
             }
@@ -412,11 +413,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             "attendance_days": payroll.attendance_days,
             "monthly_salary": payroll.monthly_salary,
             "base_salary": payroll.base_salary,
+            "late_penalties": getattr(payroll, "late_penalties", 0),
             "net_salary": payroll.net_salary,
             "is_locked": payroll.is_locked,
             "is_paid": payroll.is_paid,
             "paid_at": payroll.paid_at,
-            "paid_by": payroll.paid_by_id,            
+            "paid_by": payroll.paid_by_id,                                   
         })
 
     @action(detail=True, methods=['post'])
@@ -499,6 +501,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
         base_salary = request.data.get("base_salary", payroll.base_salary)
         penalties = request.data.get("penalties", payroll.penalties)
+        late_penalties = request.data.get("late_penalties", getattr(payroll, "late_penalties", 0))
         bonuses = request.data.get("bonuses", payroll.bonuses)
         advances = request.data.get("advances", payroll.advances)
         monthly_salary = request.data.get("monthly_salary", payroll.monthly_salary)
@@ -506,12 +509,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         try:
             base_salary = float(base_salary)
             penalties = float(penalties)
+            late_penalties = float(late_penalties)
             bonuses = float(bonuses)
             advances = float(advances)
             monthly_salary = float(monthly_salary)
         except (TypeError, ValueError):
             return Response({"detail": "قيم غير صالحة."}, status=400)
-
         if monthly_salary <= 0:
             return Response({"detail": "يجب إدخال راتب أساسي صالح."}, status=400)
 
@@ -526,10 +529,11 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         payroll.base_salary = base_salary
         payroll.monthly_salary = monthly_snapshot
         payroll.penalties = penalties
+        payroll.late_penalties = late_penalties
         payroll.bonuses = bonuses
         payroll.advances = advances
         payroll.calculate_net_salary()
-        payroll.save(update_fields=["base_salary", "monthly_salary", "penalties", "bonuses", "advances", "net_salary"])
+        payroll.save(update_fields=["base_salary", "monthly_salary", "penalties", "late_penalties", "bonuses", "advances", "net_salary"])
         
         return Response({
             "id": payroll.id,
@@ -538,12 +542,13 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             "base_salary": payroll.base_salary,
             "monthly_salary": payroll.monthly_salary,
             "penalties": payroll.penalties,
+            "late_penalties": payroll.late_penalties,
             "bonuses": payroll.bonuses,
             "advances": payroll.advances,
             "net_salary": payroll.net_salary,
             "is_paid": payroll.is_paid,            
         })
-
+        
     @action(detail=True, methods=["post"])
     def delete_payroll(self, request, pk=None):
         employee = self.get_object()

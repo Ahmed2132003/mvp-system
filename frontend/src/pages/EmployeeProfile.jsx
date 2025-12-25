@@ -480,14 +480,23 @@ export default function EmployeeProfile() {
       const isSelectedMonth = monthKey === selectedMonth;
 
       if (isSelectedMonth) {
+        const baseSalary = Number(attendanceStats.attendanceValue ?? 0);
+        const bonuses = Number(ledgerTotals.bonus ?? 0);
+        const penalties = Number(ledgerTotals.penalty ?? 0);
+        const latePenalties = Number(attendanceStats.totalPenalties ?? 0);
+        const advances = Number(ledgerTotals.advance ?? 0);
+        const totalDeductions = penalties + advances + latePenalties;
+
         return {
           attendanceDays: attendanceStats.attendanceDays,
           monthlySalary: attendanceStats.monthlySalary,
-          baseSalary: attendanceStats.attendanceValue,
-          bonuses: ledgerTotals.bonus,
-          penalties: ledgerTotals.penalty,
-          advances: ledgerTotals.advance,
-          net: attendanceStats.netSalary,
+          baseSalary,
+          bonuses,
+          penalties,
+          latePenalties,
+          advances,
+          totalDeductions,
+          net: baseSalary + bonuses - totalDeductions,
           monthKey,
         };
       }
@@ -495,7 +504,9 @@ export default function EmployeeProfile() {
       const baseSalary = Number(payroll?.base_salary ?? 0);
       const bonuses = Number(payroll?.bonuses ?? 0);
       const penalties = Number(payroll?.penalties ?? 0);
+      const latePenalties = Number(payroll?.late_penalties ?? 0);
       const advances = Number(payroll?.advances ?? 0);
+      const totalDeductions = penalties + advances + latePenalties;
 
       return {
         attendanceDays: Number(payroll?.attendance_days ?? 0),
@@ -503,8 +514,10 @@ export default function EmployeeProfile() {
         baseSalary,
         bonuses,
         penalties,
+        latePenalties,
         advances,
-        net: baseSalary + bonuses - penalties - advances,
+        totalDeductions,
+        net: baseSalary + bonuses - totalDeductions,
         monthKey,
       };
     },
@@ -512,13 +525,13 @@ export default function EmployeeProfile() {
       attendanceStats.attendanceDays,
       attendanceStats.attendanceValue,
       attendanceStats.monthlySalary,
-      attendanceStats.netSalary,
+      attendanceStats.totalPenalties,
       ledgerTotals.advance,
       ledgerTotals.bonus,
       ledgerTotals.penalty,
       selectedMonth,
     ]
-  );     
+  );          
   const updateEmployee = async () => {
         const targetId = employeeId || id;
     if (!targetId || targetId === 'me') {
@@ -1188,11 +1201,12 @@ export default function EmployeeProfile() {
                                     <div>{isAr ? 'أيام الحضور' : 'Attendance days'}: {numberFormatter.format(payrollView.attendanceDays || 0)}</div>
                                     <div>{isAr ? 'أساسي حضور' : 'Attendance base'}: {numberFormatter.format(payrollView.baseSalary || 0)}</div>
                                     <div>{isAr ? 'الحوافز' : 'Bonuses'}: {numberFormatter.format(payrollView.bonuses || 0)}</div>
-                                    <div>{isAr ? 'إجمالي الخصومات' : 'Total deductions'}: {numberFormatter.format(payrollView.penalties + payrollView.advances || 0)}</div>
+                                    <div>{isAr ? 'جزاءات التأخير' : 'Late penalties'}: {numberFormatter.format(payrollView.latePenalties || 0)}</div>
+                                    <div>{isAr ? 'إجمالي الخصومات' : 'Total deductions'}: {numberFormatter.format(payrollView.totalDeductions || 0)}</div>
                                     <div>{isAr ? 'السلف' : 'Advances'}: {numberFormatter.format(payrollView.advances || 0)}</div>
                                     <div className="col-span-2 font-semibold text-gray-800 dark:text-gray-100">
                                       {isAr ? 'الصافي' : 'Net'}: {numberFormatter.format(payrollView.net || 0)} {moneyLabel}
-                                    </div>
+                                    </div>                                    
                                     <div className="col-span-2 text-[11px] text-gray-600 dark:text-gray-300">
                                       {p.is_paid ? (isAr ? `مدفوع بتاريخ ${p.paid_at || ''}` : `Paid on ${p.paid_at || ''}`) : isAr ? 'غير مدفوع بعد' : 'Not paid yet'}
                                     </div>
@@ -1309,10 +1323,11 @@ export default function EmployeeProfile() {
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الأساسي الشهري (يومي × 30)' : 'Monthly base (daily × 30)'}</th>                                    
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'أساسي حضور' : 'Attendance base'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الحوافز' : 'Bonuses'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'جزاءات التأخير' : 'Late penalties'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'إجمالي الخصومات' : 'Total deductions'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'السلف' : 'Advances'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الصافي' : 'Net'}</th>
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الإغلاق' : 'Status'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الإغلاق' : 'Status'}</th>                                    
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الدفع' : 'Payment'}</th>                                    
                                     {canManage && <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'إجراءات' : 'Actions'}</th>}
                                   </tr>
@@ -1327,12 +1342,13 @@ export default function EmployeeProfile() {
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.monthlySalary || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.baseSalary || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.bonuses || 0)}</td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format((payrollView.penalties || 0) + (payrollView.advances || 0))}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.latePenalties || 0)}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.totalDeductions || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.advances || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{numberFormatter.format(payrollView.net || 0)} {moneyLabel}</td>                                      
                                       <td className="py-2 px-2 whitespace-nowrap">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200">
-                                          {p.is_locked ? (isAr ? 'مغلق 🔒' : 'Locked 🔒') : isAr ? 'مفتوح' : 'Open'}
+                                          {p.is_locked ? (isAr ? 'مغلق 🔒' : 'Locked 🔒') : isAr ? 'مفتوح' : 'Open'}                                          
                                         </span>
                                       </td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">

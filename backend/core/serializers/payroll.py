@@ -10,10 +10,11 @@ class PayrollPeriodSerializer(serializers.ModelSerializer):
             'month',
             'base_salary',
             'penalties',
+            'late_penalties',
             'bonuses',
             'advances',
             'net_salary',
             'is_locked',
-            'created_at',
+            'created_at',            
         ]
         read_only_fields = ['net_salary', 'created_at', 'is_locked']

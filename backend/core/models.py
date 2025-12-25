@@ -352,11 +352,12 @@ class PayrollPeriod(models.Model):
     monthly_salary = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
 
     penalties = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    late_penalties = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     bonuses = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     advances = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     
     net_salary = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, editable=False)
-
+    
     is_locked = models.BooleanField(default=False)
     is_paid = models.BooleanField(default=False)
     paid_at = models.DateField(null=True, blank=True)
@@ -378,11 +379,12 @@ class PayrollPeriod(models.Model):
 
         base = Decimal(self.base_salary or 0)
         penalties = Decimal(self.penalties or 0)
+        late_penalties = Decimal(self.late_penalties or 0)
         advances = Decimal(self.advances or 0)
         bonuses = Decimal(self.bonuses or 0)
 
-        self.net_salary = base - penalties - advances + bonuses
-                
+        self.net_salary = base - penalties - late_penalties - advances + bonuses
+                        
     def lock(self):
         self.calculate_net_salary()
         self.is_locked = True

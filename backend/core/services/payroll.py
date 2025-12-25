@@ -82,11 +82,31 @@ def _sum_minutes(employee_id: int, start: date, end_exclusive: date) -> tuple[in
     return total_work, total_late
 
 
+def _attendance_penalties(employee_id: int, start: date, end_exclusive: date) -> Decimal:
+    """Sum attendance penalties (e.g., late penalties) for the month."""
+    if AttendanceLog is None:
+        return Decimal("0")
+
+    qs = AttendanceLog.objects.filter(employee_id=employee_id)
+
+    if hasattr(AttendanceLog, "work_date"):
+        qs = qs.filter(work_date__gte=start, work_date__lt=end_exclusive)
+    elif hasattr(AttendanceLog, "check_in"):
+        qs = qs.filter(check_in__date__gte=start, check_in__date__lt=end_exclusive)
+    else:
+        return Decimal("0")
+
+    if hasattr(AttendanceLog, "penalty_applied"):
+        return Decimal(qs.aggregate(s=Sum("penalty_applied"))["s"] or 0)
+
+    return Decimal("0")
+
+
 def _ledger_totals(employee_id: int, start: date, end_exclusive: date) -> dict[str, Decimal]:
     """
     Sum employee ledger entries for the month:
     - PENALTY -> penalties
-    - BONUS   -> bonuses
+    - BONUS   -> bonuses    
     - ADVANCE -> advances
     Excludes SALARY entries (since those are payments, not inputs).
     """
@@ -139,13 +159,14 @@ def generate_payroll(*, employee, month_date: date) -> PayrollPeriod:
 
     monthly_salary = daily_salary * Decimal(30)
     base_salary = daily_salary * Decimal(attendance_days)
+    late_penalties = _attendance_penalties(employee.id, start, end_exclusive)
     
     totals = _ledger_totals(employee.id, start, end_exclusive)
     penalties = totals["penalties"]
     bonuses = totals["bonuses"]
     advances = totals["advances"]
 
-    net_salary = base_salary + bonuses - penalties - advances
+    net_salary = base_salary + bonuses - penalties - late_penalties - advances
             
     payroll = PayrollPeriod.objects.create(
         employee=employee,
@@ -156,6 +177,7 @@ def generate_payroll(*, employee, month_date: date) -> PayrollPeriod:
         total_late_minutes=total_late_minutes,
         base_salary=base_salary,
         penalties=penalties,
+        late_penalties=late_penalties,
         bonuses=bonuses,
         advances=advances,
         net_salary=net_salary,
