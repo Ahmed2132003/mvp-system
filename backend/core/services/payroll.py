@@ -145,9 +145,7 @@ def generate_payroll(*, employee, month_date: date) -> PayrollPeriod:
     advances = totals["advances"]
 
     net_salary = base_salary + bonuses - penalties - advances
-    if net_salary < 0:
-        net_salary = Decimal(0)
-
+    
     payroll = PayrollPeriod.objects.create(
         employee=employee,
         month=month_date,

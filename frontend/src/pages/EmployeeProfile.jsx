@@ -450,13 +450,14 @@ export default function EmployeeProfile() {
     const penaltiesTotal = Number(ledgerTotals.penalty ?? targetPayroll?.penalties ?? 0);
     const bonusesTotal = Number(ledgerTotals.bonus ?? targetPayroll?.bonuses ?? 0);
     const advancesTotal = Number(ledgerTotals.advance ?? employee?.advances ?? targetPayroll?.advances ?? 0);
+    const deductionsTotal = penaltiesTotal + advancesTotal;
 
-    // ✅ صافي المستحق = الراتب المستحق + الحوافز - الخصومات - السلف (حد أدنى 0)
-    const computedNet = Math.max(earnedBase + bonusesTotal - penaltiesTotal - advancesTotal, 0);
+    // ✅ صافي المستحق = الراتب المستحق + الحوافز - (الخصومات + السلف)
+    const computedNet = earnedBase + bonusesTotal - deductionsTotal;
     const netSalary = targetPayroll?.is_paid ? Number(targetPayroll.net_salary ?? 0) : computedNet;
 
-    return { totalDays, totalLate, totalPenalties, missingCheckouts, netSalary, monthlySalary, attendanceDays, earnedBase };
-  }, [attendance, payrolls, employee, selectedMonth, ledgerTotals]);
+    return { totalDays, totalLate, totalPenalties, missingCheckouts, netSalary, monthlySalary, attendanceDays, earnedBase, deductionsTotal };
+  }, [attendance, payrolls, employee, selectedMonth, ledgerTotals]);  
   const updateEmployee = async () => {
         const targetId = employeeId || id;
     if (!targetId || targetId === 'me') {
@@ -742,7 +743,7 @@ export default function EmployeeProfile() {
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-2 dark:bg-slate-900 dark:border-slate-800">
                     <p className="text-xs font-medium text-gray-500 dark:text-gray-400">{isAr ? 'إجمالي الخصومات (الشهر)' : 'Monthly Deductions'}</p>
                     <p className="text-2xl font-bold text-gray-900 dark:text-gray-50">
-                      {numberFormatter.format(ledgerTotals.penalty)} {moneyLabel}
+                      {numberFormatter.format(attendanceStats.deductionsTotal)} {moneyLabel}                      
                     </p>
                   </div>
                 </section>
@@ -805,8 +806,8 @@ export default function EmployeeProfile() {
                                 {numberFormatter.format(ledgerTotals.bonus)} {moneyLabel}
                               </p>
                               <p className="text-gray-700 dark:text-gray-200">
-                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'خصومات الشهر:' : 'Monthly deductions:'}</b>{' '}
-                                {numberFormatter.format(ledgerTotals.penalty)} {moneyLabel}
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'خصومات الشهر (جزاءات + سلف):' : 'Monthly deductions (penalties + advances):'}</b>{' '}
+                                {numberFormatter.format(attendanceStats.deductionsTotal)} {moneyLabel}                                
                               </p>
                               <p className="text-gray-700 dark:text-gray-200">
                                 <b className="text-gray-900 dark:text-gray-50">{isAr ? 'تاريخ التعيين:' : 'Hire date:'}</b> {employee.hire_date || '—'}

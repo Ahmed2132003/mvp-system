@@ -381,8 +381,8 @@ class PayrollPeriod(models.Model):
         advances = Decimal(self.advances or 0)
         bonuses = Decimal(self.bonuses or 0)
 
-        self.net_salary = max(base - penalties - advances + bonuses, Decimal("0.00"))
-        
+        self.net_salary = base - penalties - advances + bonuses
+                
     def lock(self):
         self.calculate_net_salary()
         self.is_locked = True

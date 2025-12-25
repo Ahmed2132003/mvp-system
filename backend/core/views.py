@@ -71,8 +71,7 @@ def generate_payroll(*, employee, month_date):
       daily_rate  = monthly_salary / 30
       earned_base = attendance_days * daily_rate
       net_salary  = earned_base + bonuses - penalties - advances
-      net_salary minimum 0
-
+      
     NOTE:
       - We keep كلمة "الراتب الأساسي" كما هي (employee.salary / payroll.monthly_salary).
       - "الراتب المستحق" = earned_base (stored in payroll.base_salary).
@@ -99,8 +98,8 @@ def generate_payroll(*, employee, month_date):
             existing.attendance_days = int(attendance_days)
             existing.monthly_salary = monthly_salary
             existing.base_salary = earned_base  # المستحق
-            existing.net_salary = max(earned_base + bonuses - penalties - advances, Decimal("0.00"))
-            existing.save(update_fields=["attendance_days","monthly_salary","base_salary","net_salary"])
+            existing.net_salary = earned_base + bonuses - penalties - advances
+            existing.save(update_fields=["attendance_days","monthly_salary","base_salary","net_salary"])            
         return existing
 
     monthly_salary = Decimal(getattr(employee, "salary", 0) or 0)
@@ -116,8 +115,8 @@ def generate_payroll(*, employee, month_date):
     bonuses = _sum_month_ledger(employee.id, month_date, "BONUS")
     advances = _sum_month_ledger(employee.id, month_date, "ADVANCE")
 
-    net_salary = max(earned_base + bonuses - penalties - advances, Decimal("0.00"))
-
+    net_salary = earned_base + bonuses - penalties - advances
+    
     payroll = PayrollPeriod.objects.create(
         employee=employee,
         month=month_date,
