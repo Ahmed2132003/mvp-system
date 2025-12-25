@@ -1107,21 +1107,21 @@ export default function EmployeeProfile() {
                             <div className="hidden md:block overflow-x-auto">
                               <table className="w-full text-xs">
                                 <thead>
-                                  <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">␊
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الدخول' : 'Check-in'}</th>␊
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الخروج' : 'Check-out'}</th>␊
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'تأخير' : 'Late'}</th>␊
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'غرامة' : 'Penalty'}</th>␊
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'المدة' : 'Duration'}</th>␊
-                                  </tr>␊
-                                </thead>␊
-                                <tbody>␊
+                                  <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الدخول' : 'Check-in'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الخروج' : 'Check-out'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'تأخير' : 'Late'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'غرامة' : 'Penalty'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'المدة' : 'Duration'}</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
                                   {attendance.map((a, i) => (
                                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{a.check_in || '—'}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{a.check_out || '—'}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{a.late_minutes || 0}</td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(a.penalty || 0)} {moneyLabel}</td>␊
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(a.penalty || 0)} {moneyLabel}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{a.duration || 0}</td>
                                     </tr>
                                   ))}

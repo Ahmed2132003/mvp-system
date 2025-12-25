@@ -24,7 +24,7 @@ from attendance.models import AttendanceLog
 # =========================
 from decimal import Decimal
 from django.db.models import Sum
-
+from django.db import transaction
 
 def _count_attendance_days(employee_id, month_date):
     """Count DISTINCT attendance days for the employee within that month."""
@@ -426,7 +426,7 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         payroll_id = request.data.get("payroll_id")
         target_month = request.data.get("month")
         employee = self.get_object()
-        
+                
         payroll = None
         if payroll_id:
             payroll = PayrollPeriod.objects.filter(id=payroll_id, employee=employee).first()
@@ -446,32 +446,37 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if not payroll:
             return Response({"detail": "لا يوجد كشف رواتب للشهر المحدد."}, status=404)
 
-        EmployeeLedger.objects.get_or_create(
-            employee=employee,
-            payroll=payroll,
-            entry_type="SALARY",
-            payout_date=payroll.paid_at or timezone.localdate(),            
-            defaults={
-                "amount": payroll.net_salary,
-                "description": f"Salary paid for {payroll.month.strftime('%Y-%m')}",
-            },
-        )
-
-        # ✅ Reset monthly ledger entries after salary payout (start fresh next cycle)
         month_start = payroll.month.replace(day=1)
         if month_start.month == 12:
             next_month = month_start.replace(year=month_start.year + 1, month=1)
         else:
             next_month = month_start.replace(month=month_start.month + 1)
 
-        EmployeeLedger.objects.filter(
-            employee=employee,
-            entry_type__in=["BONUS", "PENALTY", "ADVANCE"],
-            payout_date__gte=month_start,
-            payout_date__lt=next_month,
-        ).delete()
-        employee.advances = 0
-        employee.save(update_fields=["advances"])
+        with transaction.atomic():
+            payroll.mark_paid(by_user=request.user)
+
+            # أرشفة كل الحركات الخاصة بالفترة داخل نفس كشف المرتب بدل ما نحذفها
+            EmployeeLedger.objects.filter(
+                employee=employee,
+                entry_type__in=["BONUS", "PENALTY", "ADVANCE"],
+                payout_date__gte=month_start,
+                payout_date__lt=next_month,
+            ).update(payroll=payroll)
+
+            salary_entry, _ = EmployeeLedger.objects.get_or_create(
+                employee=employee,
+                payroll=payroll,
+                entry_type="SALARY",
+                payout_date=payroll.paid_at or timezone.localdate(),
+                defaults={
+                    "amount": payroll.net_salary,
+                    "description": f"Salary paid for {payroll.month.strftime('%Y-%m')}",
+                },
+            )
+
+            # نرجع السلفات (المؤجلة) لصفر عشان تبدأ الفترة الجديدة نظيفة
+            employee.advances = 0
+            employee.save(update_fields=["advances"])
 
         return Response(
             {
@@ -481,9 +486,10 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 "paid_at": payroll.paid_at,
                 "paid_by": payroll.paid_by_id,
                 "net_salary": payroll.net_salary,
+                "salary_entry_id": salary_entry.id if payroll.is_paid else None,
             }
         )
-
+        
     @action(detail=True, methods=["post", "patch"])
     def update_payroll(self, request, pk=None):
         employee = self.get_object()
