@@ -85,32 +85,35 @@ def generate_payroll(*, employee, month_date):
     if existing:
         # Ensure stored values are consistent (recalculate if not paid)
         if not existing.is_paid:
-            attendance_days = existing.attendance_days or _count_attendance_days(employee.id, month_date)
+            attendance_days = _count_attendance_days(employee.id, month_date)
             daily_salary = Decimal(getattr(employee, "salary", 0) or (existing.monthly_salary or 0) / Decimal(30))
             if daily_salary <= 0:
                 raise ValueError("يجب إدخال راتب أساسي صالح.")
+
             monthly_salary = daily_salary * Decimal(30)
             earned_base = daily_salary * Decimal(attendance_days)
-            
-            penalties = Decimal(existing.penalties or 0)
-            bonuses = Decimal(existing.bonuses or 0)
-            advances = Decimal(existing.advances or 0)
+            penalties = _sum_month_ledger(employee.id, month_date, "PENALTY")
+            bonuses = _sum_month_ledger(employee.id, month_date, "BONUS")
+            advances = _sum_month_ledger(employee.id, month_date, "ADVANCE")
 
             existing.attendance_days = int(attendance_days)
             existing.monthly_salary = monthly_salary
             existing.base_salary = earned_base  # المستحق
             existing.net_salary = earned_base + bonuses - penalties - advances
-            existing.save(update_fields=["attendance_days","monthly_salary","base_salary","net_salary"])            
+            existing.penalties = penalties
+            existing.bonuses = bonuses
+            existing.advances = advances
+            existing.save(update_fields=["attendance_days","monthly_salary","base_salary","penalties","bonuses","advances","net_salary"])            
         return existing
 
-    monthly_salary = Decimal(getattr(employee, "salary", 0) or 0)
-    if monthly_salary <= 0:
+    daily_salary = Decimal(getattr(employee, "salary", 0) or 0)
+    if daily_salary <= 0:
         raise ValueError("يجب إدخال راتب أساسي صالح.")
 
     attendance_days = _count_attendance_days(employee.id, month_date)
-    daily_rate = monthly_salary / Decimal(30)
-    earned_base = daily_rate * Decimal(attendance_days)
-
+    monthly_salary = daily_salary * Decimal(30)
+    earned_base = daily_salary * Decimal(attendance_days)
+    
     # monthly totals
     penalties = _sum_month_ledger(employee.id, month_date, "PENALTY")
     bonuses = _sum_month_ledger(employee.id, month_date, "BONUS")
@@ -441,23 +444,38 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         if not payroll:
             return Response({"detail": "لا يوجد كشف رواتب للشهر المحدد."}, status=404)
 
-        payroll.mark_paid(by_user=request.user)
         EmployeeLedger.objects.get_or_create(
             employee=employee,
             payroll=payroll,
             entry_type="SALARY",
-            payout_date=payroll.paid_at or timezone.localdate(),
+            payout_date=payroll.paid_at or timezone.localdate(),            
             defaults={
                 "amount": payroll.net_salary,
                 "description": f"Salary paid for {payroll.month.strftime('%Y-%m')}",
             },
         )
 
+        # ✅ Reset monthly ledger entries after salary payout (start fresh next cycle)
+        month_start = payroll.month.replace(day=1)
+        if month_start.month == 12:
+            next_month = month_start.replace(year=month_start.year + 1, month=1)
+        else:
+            next_month = month_start.replace(month=month_start.month + 1)
+
+        EmployeeLedger.objects.filter(
+            employee=employee,
+            entry_type__in=["BONUS", "PENALTY", "ADVANCE"],
+            payout_date__gte=month_start,
+            payout_date__lt=next_month,
+        ).delete()
+        employee.advances = 0
+        employee.save(update_fields=["advances"])
+
         return Response(
             {
                 "id": payroll.id,
                 "month": payroll.month,
-                "is_paid": payroll.is_paid,
+                "is_paid": payroll.is_paid,                
                 "paid_at": payroll.paid_at,
                 "paid_by": payroll.paid_by_id,
                 "net_salary": payroll.net_salary,
