@@ -655,3 +655,72 @@ def test_inventory_movements_report_calculates_consumption_and_timeline(reportin
     assert pizza_data["consumption_rate"] == 0
     assert salad_data["incoming"] == 0
     assert salad_data["timeline"] == []
+
+
+@pytest.mark.django_db
+def test_accounting_includes_late_penalties_and_adjusted_base():
+    user = User.objects.create_user(email="owner3@example.com", password="pass", is_active=True)
+    store = Store.objects.create(name="Payroll Store", owner=user)
+    employee = Employee.objects.create(
+        user=User.objects.create_user(email="emp@example.com", password="pass", is_active=True),
+        store=store,
+        salary=100,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    work_day = timezone.datetime(2024, 7, 2, 9, 0, tzinfo=timezone.get_current_timezone())
+    AttendanceLog.objects.create(
+        employee=employee,
+        work_date=work_day.date(),
+        check_in=work_day,
+        check_out=work_day + timezone.timedelta(hours=8),
+        late_minutes=30,
+        penalty_applied=50,
+    )
+    AttendanceLog.objects.create(
+        employee=employee,
+        work_date=work_day.date() + timezone.timedelta(days=1),
+        check_in=work_day + timezone.timedelta(days=1),
+        check_out=work_day + timezone.timedelta(days=1, hours=8),
+    )
+
+    EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="BONUS",
+        amount=20,
+        payout_date=work_day.date(),
+    )
+    EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="PENALTY",
+        amount=10,
+        payout_date=work_day.date(),
+    )
+    EmployeeLedger.objects.create(
+        employee=employee,
+        entry_type="ADVANCE",
+        amount=5,
+        payout_date=work_day.date(),
+    )
+
+    response = client.get(
+        "/api/v1/reports/accounting/",
+        {"period_type": "month", "period_value": "2024-07", "store_id": store.id},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+
+    payroll = payload["payroll"]
+    assert payroll["attendance_days"] == 2
+    assert payroll["attendance_value_total"] == 200.0
+    assert payroll["bonuses_total"] == 20.0
+    assert payroll["penalties_total"] == 60.0  # 10 ledger + 50 late penalties
+    assert payroll["advances_total"] == 5.0
+    assert payroll["payroll_total"] == 155.0  # 200 + 20 - 60 - 5
+
+    row = payroll["rows"][0]
+    assert row["base_salary"] == 160.0  # (2 * 100) + 20 - 60
+    assert row["net_salary"] == 155.0
+    assert row["late_penalties"] == 50.0

@@ -928,6 +928,11 @@ def api_accounting(request):
             days=Count("work_date", distinct=True),
             total_minutes=Coalesce(Sum("duration_minutes"), Value(0)),
             late_minutes=Coalesce(Sum("late_minutes"), Value(0)),
+                        late_penalties=Coalesce(
+                Sum("penalty_applied"),
+                Value(0),
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            ),
         )
 
         attendance_map = {row["employee_id"]: row for row in attendance_rows}
@@ -955,18 +960,19 @@ def api_accounting(request):
             att_row = attendance_map.get(emp_id, {})
             days = int(att_row.get("days") or 0)
             late_minutes = int(att_row.get("late_minutes") or 0)
+            late_penalties = Decimal(att_row.get("late_penalties") or 0)           
             worked_minutes = int(att_row.get("total_minutes") or 0)
 
             daily_salary = meta["salary"]
-            monthly_snapshot = daily_salary * Decimal("30")
             attendance_value = daily_salary * Decimal(days)
             
             bonuses = ledger_map[emp_id].get("BONUS", Decimal("0"))
-            penalties = ledger_map[emp_id].get("PENALTY", Decimal("0"))
+            penalties = ledger_map[emp_id].get("PENALTY", Decimal("0")) + late_penalties            
             advances = ledger_map[emp_id].get("ADVANCE", Decimal("0"))
 
-            net_salary = attendance_value + bonuses - penalties - advances
-            
+            base_after_adjustments = attendance_value + bonuses - penalties
+            net_salary = base_after_adjustments - advances
+                        
             attendance_value_total += attendance_value
             bonuses_total += bonuses
             penalties_total += penalties
@@ -977,7 +983,7 @@ def api_accounting(request):
                 {
                     "employee_id": emp_id,
                     "employee_name": meta["employee_name"],
-                    "base_salary": float(monthly_snapshot),
+                    "base_salary": float(base_after_adjustments),                    
                     "daily_rate": float(daily_salary),                    
                     "attendance_days": days,
                     "attendance_value": float(attendance_value),
@@ -985,6 +991,7 @@ def api_accounting(request):
                     "worked_minutes": worked_minutes,
                     "bonuses": float(bonuses),
                     "penalties": float(penalties),
+                    "late_penalties": float(late_penalties),
                     "advances": float(advances),
                     "net_salary": float(net_salary),
                 }
