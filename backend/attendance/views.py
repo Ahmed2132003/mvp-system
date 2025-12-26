@@ -1,14 +1,16 @@
 import calendar
 from datetime import date
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.shortcuts import redirect, render
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.utils import timezone
 
-from .models import AttendanceLog, LeaveRequest
+from .models import AttendanceLink, AttendanceLog, LeaveRequest
 from .serializers import AttendanceLogSerializer
 
 
@@ -230,7 +232,9 @@ def my_attendance_status(request):
                 "store": employee.store_id,
                 "store_name": getattr(employee.store, "name", None),
                 "salary": employee.salary,
-            },            
+                "qr_attendance_base64": getattr(employee, "qr_attendance_base64", None),
+                "qr_attendance_url": getattr(employee, "qr_attendance", None).url if getattr(employee, "qr_attendance", None) else None,
+            },                                  
             "shift": {
                 "start": getattr(store_settings, "attendance_shift_start", None),
                 "grace_minutes": getattr(store_settings, "attendance_grace_minutes", None),
@@ -259,19 +263,205 @@ def my_attendance_status(request):
         }
     )
                 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_qr_link(request):
+    """
+    ينشئ رابط حضور/انصراف لمرة واحدة بناءً على حالة الموظف الحالية.
+    - QR ثابت لكل موظف -> يوجّه إلى /attendance/qr/?employee=..&store=..
+    - هنا ننشئ توكن فريد + رابط متغيّر صالح لمرة واحدة في نفس اليوم.
+    """
+    employee = getattr(request.user, "employee", None)
+    if not employee:
+        return Response({"detail": "لا يوجد ملف موظف."}, status=404)
+
+    requested_action = (request.data.get("action") or "").upper().strip() or None
+    active_log = AttendanceLog.objects.active_for_employee(employee)
+
+    if requested_action in AttendanceLink.Action.values:
+        action = requested_action
+    else:
+        action = AttendanceLink.Action.CHECKOUT if active_log else AttendanceLink.Action.CHECKIN
+
+    link = AttendanceLink.objects.create(employee=employee, action=action, work_date=timezone.localdate())
+
+    url = f"{settings.SITE_URL}/attendance/qr/use/{link.token}/"
+    return Response(
+        {
+            "token": str(link.token),
+            "url": url,
+            "action": link.action,
+            "work_date": link.work_date,
+            "expires_at": link.expires_at,
+        },
+        status=201,
+    )
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def qr_redirect(request):
     """
-    ده اللي الـQR بيفتحه لو اتفتح من المتصفح.
-    التسجيل الحقيقي للحضور يتم عبر POST /attendance/check/ (JWT)
+    مدخل ثابت للـ QR لكل موظف.
+    - يحدد الموظف + الفرع من البارامز.
+    - ينشئ رابط متغيّر لمرة واحدة ويحوّل إليه.
     """
-    store_id = request.GET.get("store")
     employee_id = request.GET.get("employee")
+    store_id = request.GET.get("store")
+    action_raw = (request.GET.get("action") or "").upper().strip()
 
-    return Response({
-        "message": "افتح تطبيق الموظفين لتسجيل الحضور/الانصراف.",
-        "store_id": store_id,
-        "employee_id": employee_id,
-        "next": "/login ثم امسح QR من داخل التطبيق",
-    }, status=200)
+    if not employee_id:
+        return Response(
+            {
+                "message": "افتح تطبيق الموظفين لتسجيل الحضور/الانصراف.",
+                "detail": "يجب أن يكون QR مخصصًا لموظف محدد.",
+                "next": "/login ثم امسح QR من داخل التطبيق",
+            },
+            status=200,
+        )
+
+    employee = getattr(getattr(request, "user", None), "employee", None)
+    if not employee or str(employee.id) != str(employee_id):
+        try:
+            from core.models import Employee
+            employee = Employee.objects.get(id=employee_id)
+        except Exception:
+            return Response({"detail": "الموظف غير موجود."}, status=404)
+
+    if store_id and str(employee.store_id) != str(store_id):
+        return Response({"detail": "QR لا يخص هذا الفرع."}, status=400)
+
+    active_log = AttendanceLog.objects.active_for_employee(employee)
+
+    if action_raw in AttendanceLink.Action.values:
+        action = action_raw
+    else:
+        action = AttendanceLink.Action.CHECKOUT if active_log else AttendanceLink.Action.CHECKIN
+
+    link = AttendanceLink.objects.create(
+        employee=employee,
+        action=action,
+        work_date=timezone.localdate(),
+    )
+
+    return redirect("attendance-qr-use-page", token=link.token)
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def qr_use(request):
+    """
+    استهلاك رابط الـ QR لمرة واحدة مع التقاط الموقع.
+    """
+    token = request.data.get("token")
+    gps = request.data.get("gps") or {}
+    location = request.data.get("location") or gps
+    now = timezone.now()
+
+    if not token:
+        return Response({"status": "error", "message": "الرابط مفقود."}, status=400)
+
+    if not isinstance(gps, dict) or not gps.get("lat") or not gps.get("lng"):
+        return Response(
+            {"status": "blocked", "message": "فعّل الموقع أولاً لتسجيل الحضور أو الانصراف."},
+            status=400,
+        )
+
+    try:
+        link = AttendanceLink.objects.select_related("employee").get(token=token)
+    except AttendanceLink.DoesNotExist:
+        return Response({"status": "error", "message": "الرابط غير صالح."}, status=400)
+
+    if not link.is_valid(now=now):
+        return Response({"status": "error", "message": "انتهت صلاحية الرابط أو تم استخدامه."}, status=400)
+
+    employee = link.employee
+    ip = request.META.get("REMOTE_ADDR")
+    user_agent = (request.META.get("HTTP_USER_AGENT") or "")[:500]
+    work_date = timezone.localdate(now)
+
+    active_log = AttendanceLog.objects.active_for_employee(employee)
+
+    if active_log and active_log.work_date and active_log.work_date != work_date:
+        active_log.check_out = now
+        active_log.gps = gps or active_log.gps
+        active_log.location = location or active_log.location
+        active_log.ip_address = ip
+        active_log.user_agent = user_agent
+        active_log.save()
+        active_log = None
+
+    if link.action == AttendanceLink.Action.CHECKIN:
+        if active_log:
+            return Response({"status": "error", "message": "يوجد تسجيل حضور نشط بالفعل."}, status=400)
+
+        try:
+            log = AttendanceLog.objects.create(
+                employee=employee,
+                check_in=now,
+                work_date=work_date,
+                method="QR",
+                gps=gps,
+                location=location,
+                ip_address=ip,
+                user_agent=user_agent,
+            )
+        except ValidationError as exc:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "تعذر تسجيل الحضور.",
+                    "detail": exc.message_dict if hasattr(exc, "message_dict") else str(exc),
+                },
+                status=400,
+            )
+
+        link.used_at = now
+        link.save(update_fields=["used_at"])
+
+        return Response(
+            {
+                "status": "checkin",
+                "message": "تم تسجيل الحضور بنجاح",
+                "check_in": log.check_in,
+                "work_date": log.work_date,
+                "is_late": log.is_late,
+                "late_minutes": log.late_minutes,
+                "penalty": float(log.penalty_applied),
+                "location": log.location,
+                "gps": log.gps,
+            }
+        )
+
+    # CHECKOUT
+    if not active_log:
+        return Response({"status": "error", "message": "لا توجد جلسة نشطة للانصراف."}, status=400)
+
+    active_log.check_out = now
+    active_log.gps = gps or active_log.gps
+    active_log.location = location or active_log.location
+    active_log.ip_address = ip
+    active_log.user_agent = user_agent
+    active_log.save()
+
+    link.used_at = now
+    link.save(update_fields=["used_at"])
+
+    return Response(
+        {
+            "status": "checkout",
+            "message": "تم تسجيل الانصراف بنجاح",
+            "check_out": active_log.check_out,
+            "work_date": active_log.work_date,
+            "duration_minutes": active_log.duration_minutes,
+            "location": active_log.location,
+            "gps": active_log.gps,
+        }
+    )
+
+
+def qr_use_page(request, token):
+    """
+    صفحة وسيطة لالتقاط الموقع وتشغيل استهلاك الرابط.
+    """
+    return render(request, "attendance/qr_redirect.html", {"token": token})

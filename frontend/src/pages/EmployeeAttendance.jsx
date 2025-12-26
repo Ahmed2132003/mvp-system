@@ -234,6 +234,7 @@ export default function EmployeeAttendance() {
     typeof monthly.projected_net_salary === 'number'
       ? Math.max(0, Number(monthly.projected_net_salary))
       : Math.max(0, salary - attendanceValue - totalPenalties);
+  const qrBase64 = status?.employee?.qr_attendance_base64;
 
   const fetchMyStatus = useCallback(async () => {
     try {
@@ -663,8 +664,55 @@ export default function EmployeeAttendance() {
               </div>
             </section>
 
+            {/* Personal QR */}
+            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                    {t('QR الحضور والانصراف الخاص بك', 'Your attendance QR')}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
+                    {t(
+                      'امسح الكود بأي كاميرا ليتم إنشاء رابط متغيّر لمرة واحدة يسجل حضورك أو انصرافك تلقائيًا.',
+                      'Scan this code with any camera to generate a one-time link that auto-records your check-in or check-out.'
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                {qrBase64 ? (
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <img
+                      src={`data:image/png;base64,${qrBase64}`}
+                      alt={t('QR الحضور', 'Attendance QR')}
+                      className="w-40 h-40 rounded-2xl border border-gray-200 shadow-sm dark:border-slate-700"
+                    />
+                    <div className="text-[11px] text-gray-600 space-y-2 dark:text-gray-300">
+                      <p>
+                        {t(
+                          'الكود ثابت للموظف، لكن الرابط يتغيّر مع كل مسح ويعمل لمرة واحدة فقط لنفس اليوم.',
+                          'The QR is fixed per employee, but the generated link changes each scan and works once for the same day.'
+                        )}
+                      </p>
+                      <p>
+                        {t(
+                          'عند الفتح سيتم طلب الموقع تلقائيًا لتسجيل العملية.',
+                          'When opened, location permission will be requested automatically to record the action.'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-500 border border-dashed border-gray-200 rounded-2xl px-3 py-3 dark:text-gray-400 dark:border-slate-700">
+                    {t('لا يوجد QR متاح لهذا الحساب.', 'No QR is available for this account.')}
+                  </div>
+                )}
+              </div>
+            </section>
+
             {/* Action + Result */}
-            <section className="grid gap-4 lg:grid-cols-2 items-start">
+            <section className="grid gap-4 lg:grid-cols-2 items-start">              
               {/* Action */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5 dark:bg-slate-900 dark:border-slate-800">
                 <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">

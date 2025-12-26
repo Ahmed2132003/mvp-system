@@ -1,10 +1,11 @@
 # attendance/models.py
 
+import uuid
+
 from django.db import models
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.db.models import Q
-
 
 class AttendanceLogQuerySet(models.QuerySet):
     def today(self):
@@ -54,7 +55,7 @@ class EmployeeShiftAssignment(models.Model):
         return f"{self.employee} -> {self.shift} ({self.start_date} - {self.end_date or '∞'})"
 
 
-class AttendanceLog(models.Model):
+class AttendanceLog(models.Model):    
     METHOD_CHOICES = [
         ("QR", "QR Code"),
         ("MANUAL", "Manual"),
@@ -184,6 +185,57 @@ class AttendanceLog(models.Model):
         status = "حاضر" if self.is_active else "غادر"
         return f"{self.employee} - {status} ({self.method})"
 
+
+class AttendanceLink(models.Model):
+    class Action(models.TextChoices):
+        CHECKIN = "CHECKIN", "Check-in"
+        CHECKOUT = "CHECKOUT", "Check-out"
+
+    employee = models.ForeignKey("core.Employee", on_delete=models.CASCADE, related_name="attendance_links")
+    action = models.CharField(max_length=10, choices=Action.choices)
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    work_date = models.DateField(default=timezone.localdate, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["employee", "work_date"]),
+        ]
+
+    def is_valid(self, now=None):
+        now = now or timezone.now()
+        today = timezone.localdate(now)
+
+        if self.used_at:
+            return False
+
+        if self.work_date and self.work_date != today:
+            return False
+
+        if self.expires_at and self.expires_at < now:
+            return False
+
+        return True
+
+    def save(self, *args, **kwargs):
+        if not self.work_date:
+            self.work_date = timezone.localdate()
+
+        if not self.expires_at:
+            end_of_day = timezone.make_aware(
+                timezone.datetime.combine(self.work_date, timezone.datetime.max.time()),
+                timezone.get_current_timezone(),
+            )
+            self.expires_at = end_of_day
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.employee} - {self.action} ({self.token})"
 
 class MonthlyPayroll(models.Model):
     employee = models.ForeignKey("core.Employee", on_delete=models.CASCADE)

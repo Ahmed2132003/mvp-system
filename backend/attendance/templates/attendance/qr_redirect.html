@@ -1,32 +1,97 @@
 <!-- templates/attendance/qr_redirect.html -->
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>جاري...</title></head><body>
-<script>
-  const params = new URLSearchParams(window.location.search);
-  const payload = {
-    employee_id: params.get('emp'),
-    store_id: params.get('store'),
-    action: params.get('action') || 'checkin',
-    location: null
-  };
+<html lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>تسجيل الحضور/الانصراف</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background:#f7f7fb; color:#111; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+    .card { background:#fff; border-radius:16px; box-shadow:0 10px 40px rgba(0,0,0,0.08); padding:22px 20px; max-width:480px; width:100%; }
+    .title { font-size:20px; margin:0 0 6px; font-weight:700; text-align:center; }
+    .desc { font-size:13px; color:#555; text-align:center; margin:0 0 14px; line-height:1.5; }
+    .status { border-radius:14px; padding:12px 14px; font-size:14px; margin-top:10px; text-align:center; }
+    .loading { background:#f0f7ff; color:#0b5ed7; border:1px solid #cfe2ff; }
+    .success { background:#e9f7ef; color:#0f5132; border:1px solid #badbcc; }
+    .error { background:#fdecea; color:#b02a37; border:1px solid #f5c2c7; }
+    .small { font-size:12px; color:#777; text-align:center; margin-top:12px; line-height:1.4; }
+    .spinner { width:22px; height:22px; border-radius:50%; border:3px solid #cfe2ff; border-top-color:#0b5ed7; margin:0 auto 8px; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1 class="title">جاري تسجيل الحضور/الانصراف</h1>
+    <p class="desc">نحتاج صلاحية الموقع لإتمام العملية. برجاء الانتظار لثوانٍ قليلة.</p>
+    <div id="status" class="status loading">
+      <div class="spinner"></div>
+      <div>طلب صلاحية الموقع...</div>
+    </div>
+    <p id="hint" class="small">تأكد من تفعيل GPS/الموقع في متصفحك.</p>
+  </div>
 
-  fetch('/api/attendance/qr-check/', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
-  })
-  .then(r => r.json())
-  .then(d => {
-    document.body.innerHTML = `
-      <h1 style="text-align:center;margin-top:50px;font-family:Arial">
-        ${d.status === 'success' ? 'تم تسجيل الحضور بنجاح' : 'خطأ'}
-      </h1>
-      <p style="text-align:center;font-size:18px">
-        ${d.message || d.error}
-        ${d.is_late ? '<br>متأخر ' + d.late_minutes + ' دقيقة' : ''}
-      </p>
-    `;
-  })
-  .catch(() => document.body.innerHTML = "<h1>فشل في الاتصال</h1>");
-</script>
-</body></html>
+  <script>
+    const token = "{{ token }}";
+    const statusEl = document.getElementById('status');
+    const hintEl = document.getElementById('hint');
+
+    function setStatus(text, type) {
+      statusEl.className = 'status ' + type;
+      statusEl.innerHTML = `<div>${text}</div>`;
+    }
+
+    function setHint(text) {
+      hintEl.textContent = text;
+    }
+
+    function recordAttendance(gps) {
+      fetch('/api/v1/attendance/qr/use/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, gps })
+      })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.message || 'تعذر إتمام العملية.');
+        }
+        setStatus(data.message || 'تم التسجيل بنجاح', 'success');
+        setHint(data.status === 'checkin' ? 'تم تسجيل حضورك. الرابط صالح لمرة واحدة فقط.' : 'تم تسجيل الانصراف. الرابط صالح لمرة واحدة فقط.');
+      })
+      .catch((err) => {
+        setStatus(err.message || 'تعذر إتمام العملية.', 'error');
+        setHint('جرّب إعادة مسح الـ QR مع تفعيل الموقع. تأكد أن الرابط غير منتهي الصلاحية.');
+      });
+    }
+
+    function requestLocation() {
+      if (!navigator.geolocation) {
+        setStatus('المتصفح لا يدعم تحديد الموقع.', 'error');
+        setHint('استخدم متصفح أحدث أو فعّل أذونات الموقع.');
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const gps = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          };
+          setStatus('تم الحصول على الموقع، جاري التسجيل...', 'loading');
+          recordAttendance(gps);
+        },
+        (err) => {
+          let msg = 'تعذر الحصول على الموقع. يرجى السماح بالوصول للموقع.';
+          if (err?.code === 1) msg = 'تم رفض إذن الموقع. برجاء السماح بالموقع وإعادة المحاولة.';
+          setStatus(msg, 'error');
+          setHint('اسمح بالوصول للموقع ثم أعد تحميل الصفحة.');
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    requestLocation();
+  </script>
+</body>
+</html>

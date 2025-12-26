@@ -28,7 +28,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
     # ✅ NEW: QR attendance الموحد من store
     store_qr_attendance_base64 = serializers.CharField(source="store.qr_attendance_base64", read_only=True)
     store_qr_attendance_url = serializers.SerializerMethodField()
-
+    # ✅ Per-employee QR (ثابت لكن الرابط متغيّر عبر السيرفر)
+    qr_attendance_base64 = serializers.CharField(read_only=True)
+    qr_code_attendance_base64 = serializers.CharField(source="qr_attendance_base64", read_only=True)
+    qr_attendance_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = Employee
         fields = [
@@ -50,8 +54,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
             # ✅ Store QR (موحد)
             "store_qr_attendance_base64",
             "store_qr_attendance_url",
-        ]
 
+            # ✅ Employee QR
+            "qr_attendance_base64",
+            "qr_code_attendance_base64",
+            "qr_attendance_url",
+        ]
+        
     def validate(self, attrs):
         store = attrs.get("store") or getattr(self.instance, "store", None)
         branch = attrs.get("branch") or getattr(self.instance, "branch", None)
@@ -102,6 +111,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def get_store_qr_attendance_url(self, obj):
         if obj.store and obj.store.qr_attendance:
             return f"{settings.SITE_URL}{obj.store.qr_attendance.url}"
+        return None
+
+    def get_qr_attendance_url(self, obj):
+        if obj.qr_attendance:
+            return f"{settings.SITE_URL}{obj.qr_attendance.url}"
         return None
 
     def get_is_present(self, obj):
