@@ -17,10 +17,12 @@ class BranchSerializer(serializers.ModelSerializer):
             'store_name',
             'address',
             'phone',
-            'is_active'
+            'is_active',
+            'qr_menu',
+            'qr_menu_base64',
         ]
         read_only_fields = ['store']  # الموظف ما يغيّرش المتجر من هنا
-
+        
     # اختياري: لو عايز تمنع إنشاء فرع من غير store (للـ create)
     def create(self, validated_data):
         # في الـ view هنحدد الـ store من اليوزر، بس لو جاء في الـ payload هنتأكد

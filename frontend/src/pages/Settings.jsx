@@ -115,9 +115,15 @@ export default function SettingsPage() {
   const [attendanceQRs, _setAttendanceQRs] = useState([]);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [branches, setBranches] = useState([]);
 
   const storeMenuUrl = useMemo(
     () => (store?.id ? `${window.location.origin}/store/${store.id}/menu` : ''),
+    [store]
+  );
+  const branchMenuUrl = useCallback(
+    (branchId) =>
+      store?.id ? `${window.location.origin}/store/${store.id}/menu/?branch=${branchId}` : '',
     [store]
   );
   const tableMenuTemplate = useMemo(
@@ -179,7 +185,7 @@ export default function SettingsPage() {
       if (currentStore) {
         setStoreForm({
           name: currentStore.name || '',
-          address: currentStore.address || '',
+          address: currentStore.address || '',          
           phone: currentStore.phone || '',
         });
 
@@ -188,16 +194,24 @@ export default function SettingsPage() {
           enabled: keys.enabled ?? false,
           api_key: keys.api_key || '',
           iframe_id: keys.iframe_id || '',
-          integration_id_card: keys.integration_id_card || '',
+          integration_id_card: keys.integration_id_card || '',          
           integration_id_wallet: keys.integration_id_wallet || '',
           hmac_secret: keys.hmac_secret || '',
           sandbox_mode: keys.sandbox_mode ?? true,
         });
+
+        try {
+          const branchesRes = await api.get('/branches/');
+          setBranches(branchesRes.data || []);
+        } catch (branchErr) {
+          console.error('خطأ في تحميل الفروع:', branchErr);
+          setBranches([]);
+        }
       }
 
       setStoreSettings({
         loyalty_enabled: settingsRes.data.loyalty_enabled,
-        allow_negative_stock: settingsRes.data.allow_negative_stock,
+        allow_negative_stock: settingsRes.data.allow_negative_stock,        
         allow_order_without_stock: settingsRes.data.allow_order_without_stock,
         tax_rate: settingsRes.data.tax_rate,
         service_charge: settingsRes.data.service_charge,
@@ -688,7 +702,7 @@ export default function SettingsPage() {
                         <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-2xl p-4">
                           <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-3">
                             {isAr ? 'QR الحضور والانصراف' : 'Attendance QR'}
-                          </p>
+                          </p>                          
                           <div className="grid gap-2 grid-cols-2">
                             {attendanceQRs.slice(0, 4).map((row) => (
                               <div
@@ -721,8 +735,72 @@ export default function SettingsPage() {
                           )}
                         </div>
                       )}
-                    </div>
 
+                      {branches?.length > 0 && (
+                        <div className="md:col-span-2 bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-2xl p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                                {isAr ? 'أكواد QR لفروع المتجر' : 'Branches menu QR codes'}
+                              </p>
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {isAr
+                                  ? 'كل كود يفتح منيو الطلبات الخاصة بالفرع المحدد.'
+                                  : 'Each QR opens the menu for its specific branch.'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {branches.map((branch) => {
+                              const url = branchMenuUrl(branch.id);
+                              return (
+                                <div
+                                  key={branch.id}
+                                  className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl p-3 space-y-2"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">
+                                      {branch.name}
+                                    </p>
+                                    {branch.is_active === false && (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-200 text-gray-700 dark:bg-slate-800 dark:text-gray-300">
+                                        {isAr ? 'متوقف' : 'Inactive'}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {branch.qr_menu_base64 ? (
+                                    <img
+                                      alt={branch.name}
+                                      className="w-32 h-32 rounded-xl border border-gray-200 dark:border-slate-700 bg-white"
+                                      src={`data:image/png;base64,${branch.qr_menu_base64}`}
+                                    />
+                                  ) : (
+                                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                      {isAr ? 'لم يتم إنشاء QR بعد.' : 'QR not generated yet.'}
+                                    </p>
+                                  )}
+
+                                  <div className="flex items-center justify-between gap-2 text-[11px] text-gray-700 dark:text-gray-200">
+                                    <span className="truncate">{url}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        copyValue(url, isAr ? 'تم نسخ رابط منيو الفرع' : 'Branch menu link copied')
+                                      }
+                                      className="px-2 py-1 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-100 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                                    >
+                                      {isAr ? 'نسخ' : 'Copy'}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     {/* مشاركة الروابط والـ QR */}
                     <div className="bg-white dark:bg-slate-900 border border-blue-100 dark:border-slate-800 rounded-2xl p-4 space-y-3">
                       <div className="flex items-center justify-between">
