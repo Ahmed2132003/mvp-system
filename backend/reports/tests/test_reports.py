@@ -79,14 +79,14 @@ def expense_setup(db):
     employee = Employee.objects.create(
         user=User.objects.create_user(
             email="employee@example.com",
-            password="pass",
+            password="pass",            
             is_active=True,
         ),
         store=store,
         branch=branch,
-        salary=3000,
+        salary=100,
     )
-
+    
     client = APIClient()
     client.force_authenticate(user=user)
 
@@ -340,20 +340,24 @@ def test_expense_summary_daily_attendance_only(expense_setup):
     assert response.status_code == 200
     payload = response.json()
 
-    assert payload["payroll_total"] == 100.0  # 3000 / 30 * 1 day
+    assert payload["attendance_value_total"] == 100.0
+    assert payload["bonuses_total"] == 0.0
+    assert payload["penalties_total"] == 0.0
+    assert payload["advances_total"] == 0.0
+    assert payload["late_penalties_total"] == 0.0
+    assert payload["payroll_total"] == 100.0  # 1 day * 100
     assert payload["purchase_total"] == 0.0
     assert payload["total_expense"] == 100.0
     assert payload["period_type"] == "day"
     assert payload["period_value"] == target_date.date().isoformat()
 
-
 @pytest.mark.django_db
-def test_expense_summary_monthly_attendance_and_purchases(expense_setup):    
+def test_expense_summary_monthly_attendance_and_purchases(expense_setup):  
     client = expense_setup["client"]
     employee = expense_setup["employee"]
     inventory = expense_setup["inventory"]
     item = expense_setup["item"]
-
+    
     AttendanceLog.objects.create(
         employee=employee,
         check_in=timezone.make_aware(datetime(2024, 7, 1, 9, 0)),
@@ -386,16 +390,60 @@ def test_expense_summary_monthly_attendance_and_purchases(expense_setup):
     payload = response.json()
     assert payload["period_type"] == "month"
     assert payload["period_value"] == "2024-07"
-    assert payload["payroll_total"] == 200.0  # 2 days * 100
+    assert payload["attendance_value_total"] == 200.0  # 2 days * 100
+    assert payload["bonuses_total"] == 0.0
+    assert payload["penalties_total"] == 0.0
+    assert payload["advances_total"] == 0.0
+    assert payload["late_penalties_total"] == 0.0
+    assert payload["payroll_total"] == 200.0
     assert payload["purchase_total"] == 250.0  # 10 * cost_price 25
     assert payload["total_expense"] == 450.0
+
+
+@pytest.mark.django_db
+def test_expense_summary_includes_adjustments(expense_setup):
+    client = expense_setup["client"]
+    employee = expense_setup["employee"]
+
+    work_day = timezone.make_aware(datetime(2024, 8, 1, 9, 0))
+    AttendanceLog.objects.create(
+        employee=employee,
+        check_in=work_day,
+        check_out=work_day + timedelta(hours=8),
+        work_date=work_day.date(),
+        late_minutes=20,
+        penalty_applied=15,
+    )
+    AttendanceLog.objects.create(
+        employee=employee,
+        check_in=work_day + timedelta(days=1),
+        check_out=work_day + timedelta(days=1, hours=8),
+        work_date=work_day.date() + timedelta(days=1),
+    )
+
+    EmployeeLedger.objects.create(employee=employee, entry_type="BONUS", amount=30, payout_date=work_day.date())
+    EmployeeLedger.objects.create(employee=employee, entry_type="PENALTY", amount=5, payout_date=work_day.date())
+    EmployeeLedger.objects.create(employee=employee, entry_type="ADVANCE", amount=10, payout_date=work_day.date())
+
+    response = client.get("/api/v1/reports/expenses/", {"period_type": "month", "period_value": "2024-08"})
+    assert response.status_code == 200
+
+    payload = response.json()
+    assert payload["attendance_value_total"] == 200.0  # 2 days * 100
+    assert payload["bonuses_total"] == 30.0
+    assert payload["penalties_total"] == 5.0
+    assert payload["advances_total"] == 10.0
+    assert payload["late_penalties_total"] == 15.0
+    assert payload["payroll_total"] == 200.0  # 200 + 30 - 5 - 10 - 15
+    assert payload["purchase_total"] == 0.0
+    assert payload["total_expense"] == 200.0
 
 
 @pytest.mark.django_db
 def test_inventory_value_report_respects_sales_deductions(reporting_setup):
     client = reporting_setup["client"]
     store = reporting_setup["store"]
-    branch = reporting_setup["branch"]
+    branch = reporting_setup["branch"]    
     items = reporting_setup["items"]
         
     inventory_burger = Inventory.objects.create(

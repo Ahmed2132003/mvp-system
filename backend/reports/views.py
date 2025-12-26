@@ -737,21 +737,76 @@ def expense_summary(request):
         period_type, normalized_value, attendance_filter = _parse_period_for_field(
             "work_date", period_type_param, period_value_param, now, use_date_lookup=False
         )
+        _, _, ledger_filter = _parse_period_for_field(
+            "payout_date", period_type_param, period_value_param, now, use_date_lookup=False
+        )
         _, _, purchase_filter = _parse_period_for_field(
             "created_at", period_type_param, period_value_param, now
         )
 
-        attendance_rows = (
-            AttendanceLog.objects.filter(**attendance_filter)
-            .values("employee_id", "employee__salary")
-            .annotate(days=Count("work_date", distinct=True))
-        )
+        store = get_store_from_request(request)
+        branch = get_branch_from_request(request, store=store)
 
-        payroll_total = Decimal("0")
-        for row in attendance_rows:
-            daily_salary = row.get("employee__salary") or Decimal("0")            
-            days = row.get("days") or 0
-            payroll_total += daily_salary * days
+        employees_qs = Employee.objects.all()
+        if store:
+            employees_qs = employees_qs.filter(store=store)
+        if branch:
+            employees_qs = employees_qs.filter(branch=branch)
+
+        employees_map = {emp.id: Decimal(emp.salary or 0) for emp in employees_qs}
+
+        attendance_qs = AttendanceLog.objects.filter(**attendance_filter)
+        if store:
+            attendance_qs = attendance_qs.filter(employee__store=store)
+        if branch:
+            attendance_qs = attendance_qs.filter(employee__branch=branch)
+
+        attendance_rows = attendance_qs.values("employee_id").annotate(
+            days=Count("work_date", distinct=True),
+            late_penalties=Coalesce(
+                Sum("penalty_applied"),
+                Value(0),
+                output_field=DecimalField(max_digits=10, decimal_places=2),
+            ),            
+        )
+        attendance_map = {row["employee_id"]: row for row in attendance_rows}
+
+        ledger_qs = EmployeeLedger.objects.filter(**ledger_filter)
+        if store:
+            ledger_qs = ledger_qs.filter(employee__store=store)
+        if branch:
+            ledger_qs = ledger_qs.filter(employee__branch=branch)
+
+        ledger_rows = ledger_qs.values("employee_id", "entry_type").annotate(total=Sum("amount"))
+        ledger_map = defaultdict(lambda: defaultdict(Decimal))
+        for row in ledger_rows:
+            ledger_map[row["employee_id"]][row["entry_type"]] = row["total"] or Decimal("0")
+
+        attendance_value_total = Decimal("0")
+        bonuses_total = Decimal("0")
+        penalties_total = Decimal("0")
+        advances_total = Decimal("0")
+        late_penalties_total = Decimal("0")
+
+        for emp_id, salary in employees_map.items():
+            att_row = attendance_map.get(emp_id, {})
+            days = int(att_row.get("days") or 0)
+            late_penalties = Decimal(att_row.get("late_penalties") or 0)
+            
+            attendance_value = salary * Decimal(days)
+            bonuses = ledger_map[emp_id].get("BONUS", Decimal("0"))
+            penalties = ledger_map[emp_id].get("PENALTY", Decimal("0"))
+            advances = ledger_map[emp_id].get("ADVANCE", Decimal("0"))
+
+            attendance_value_total += attendance_value
+            bonuses_total += bonuses
+            penalties_total += penalties
+            advances_total += advances
+            late_penalties_total += late_penalties
+
+        payroll_total = (
+            attendance_value_total + bonuses_total - penalties_total - advances_total - late_penalties_total
+        )            
         purchase_qs = (
             InventoryMovement.objects.filter(movement_type="IN", change__gt=0, **purchase_filter)
             .annotate(
@@ -759,6 +814,11 @@ def expense_summary(request):
                 * Coalesce(F("item__cost_price"), Value(0), output_field=DecimalField(max_digits=10, decimal_places=2))
             )
         )
+        if store:
+            purchase_qs = purchase_qs.filter(branch__store=store)
+        if branch:
+            purchase_qs = purchase_qs.filter(branch=branch)
+            
         purchase_total = purchase_qs.aggregate(total=Sum("cost"))["total"] or Decimal("0")
 
         total_expense = payroll_total + purchase_total
@@ -767,6 +827,11 @@ def expense_summary(request):
             {
                 "period_type": period_type,
                 "period_value": normalized_value,
+                "attendance_value_total": float(attendance_value_total),
+                "bonuses_total": float(bonuses_total),
+                "penalties_total": float(penalties_total),
+                "advances_total": float(advances_total),
+                "late_penalties_total": float(late_penalties_total),
                 "payroll_total": float(payroll_total),
                 "purchase_total": float(purchase_total),
                 "total_expense": float(total_expense),
@@ -778,6 +843,11 @@ def expense_summary(request):
             {
                 "period_type": "day",
                 "period_value": None,
+                "attendance_value_total": 0.0,
+                "bonuses_total": 0.0,
+                "penalties_total": 0.0,
+                "advances_total": 0.0,
+                "late_penalties_total": 0.0,
                 "payroll_total": 0.0,
                 "purchase_total": 0.0,
                 "total_expense": 0.0,
