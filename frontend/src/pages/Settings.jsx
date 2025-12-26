@@ -78,6 +78,7 @@ export default function SettingsPage() {
   const [savingStoreSettings, setSavingStoreSettings] = useState(false);
   const [savingPaymob, setSavingPaymob] = useState(false);
   const [savingLoyalty, setSavingLoyalty] = useState(false);
+  const [savingBranch, setSavingBranch] = useState(false);
 
   const [activeTab, setActiveTab] = useState('store'); // 'store' | 'paymob' | 'loyalty'
 
@@ -116,6 +117,13 @@ export default function SettingsPage() {
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
   const [branches, setBranches] = useState([]);
+  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [branchForm, setBranchForm] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    is_active: true,
+  });
 
   const storeMenuUrl = useMemo(
     () => (store?.id ? `${window.location.origin}/store/${store.id}/menu` : ''),
@@ -125,6 +133,10 @@ export default function SettingsPage() {
     (branchId) =>
       store?.id ? `${window.location.origin}/store/${store.id}/menu/?branch=${branchId}` : '',
     [store]
+  );
+  const selectedBranch = useMemo(
+    () => branches.find((branch) => String(branch.id) === String(selectedBranchId)) || null,
+    [branches, selectedBranchId]
   );
   const tableMenuTemplate = useMemo(
     () => (store?.id ? `${window.location.origin}/table/{table_id}/menu` : ''),
@@ -202,7 +214,12 @@ export default function SettingsPage() {
 
         try {
           const branchesRes = await api.get('/branches/');
-          setBranches(branchesRes.data || []);
+          const list = branchesRes.data || [];
+          setBranches(list);
+
+          if (list.length && !selectedBranchId) {
+            setSelectedBranchId(String(list[0].id));
+          }
         } catch (branchErr) {
           console.error('خطأ في تحميل الفروع:', branchErr);
           setBranches([]);
@@ -238,13 +255,32 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [isAr]);
+  }, [isAr, selectedBranchId]);
 
   useEffect(() => {
     fetchAll();
     // ✅ QR موحّد للفرع موجود داخل store => مش محتاجين endpoint attendance_qr_list
     // fetchAttendanceQRs();
   }, [fetchAll, fetchAttendanceQRs]);
+
+  useEffect(() => {
+    if (!selectedBranch) {
+      setBranchForm({
+        name: '',
+        phone: '',
+        address: '',
+        is_active: true,
+      });
+      return;
+    }
+
+    setBranchForm({
+      name: selectedBranch.name || '',
+      phone: selectedBranch.phone || '',
+      address: selectedBranch.address || '',
+      is_active: selectedBranch.is_active ?? true,
+    });
+  }, [selectedBranch]);
 
   // ====== Handlers ======
   const handleStoreChange = (e) => {
@@ -265,6 +301,14 @@ export default function SettingsPage() {
   const handleLoyaltyChange = (e) => {
     const { name, type, checked, value } = e.target;
     setLoyalty((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
+  const handleBranchSelect = (e) => {
+    setSelectedBranchId(e.target.value);
+  };
+
+  const handleBranchChange = (e) => {
+    const { name, type, checked, value } = e.target;
+    setBranchForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   // ====== Save actions ======
@@ -347,7 +391,7 @@ export default function SettingsPage() {
     e?.preventDefault();
 
     try {
-      setSavingLoyalty(true);
+      setSavingLoyalty(true);      
       setError(null);
 
       await api.patch('/loyalty/program/current/', {
@@ -371,9 +415,39 @@ export default function SettingsPage() {
       setSavingLoyalty(false);
     }
   };
+  const saveBranchSettings = async (e) => {
+    e?.preventDefault();
+    if (!selectedBranch) return;
+
+    try {
+      setSavingBranch(true);
+      setError(null);
+
+      await api.patch(`/branches/${selectedBranch.id}/`, {
+        name: branchForm.name,
+        phone: branchForm.phone,
+        address: branchForm.address,
+        is_active: branchForm.is_active,
+      });
+
+      showSuccess(isAr ? 'تم حفظ إعدادات الفرع بنجاح.' : 'Branch settings saved successfully.');
+      await fetchAll();
+    } catch (err) {
+      console.error('خطأ في حفظ إعدادات الفرع:', err);
+      const msg =
+        err.response?.data?.detail ||
+        err.response?.data?.name?.[0] ||
+        (isAr ? 'حدث خطأ أثناء حفظ إعدادات الفرع.' : 'Failed to save branch settings.');
+      setError(msg);
+      notifyError(msg);
+    } finally {
+      setSavingBranch(false);
+    }
+  };
 
   const tabs = [
     { id: 'store', label: isAr ? 'معلومات المتجر' : 'Store info' },
+    { id: 'branches', label: isAr ? 'إعدادات الفروع' : 'Branch settings' },
     { id: 'paymob', label: isAr ? 'إعدادات PayMob' : 'PayMob' },
     { id: 'loyalty', label: isAr ? 'برنامج الولاء' : 'Loyalty' },
   ];
@@ -568,7 +642,7 @@ export default function SettingsPage() {
             {!loading && (
               <>
                 {activeTab === 'store' && (
-                  <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 md:p-5 space-y-4">
+                  <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 md:p-5 space-y-4">                    
                     <div>
                       <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
                         {isAr ? 'معلومات المتجر وإعدادات الفواتير' : 'Store info & invoice settings'}
@@ -946,7 +1020,169 @@ export default function SettingsPage() {
                     </form>
                   </section>
                 )}
+                {activeTab === 'branches' && (
+                  <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 md:p-5 space-y-5">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+                          {isAr ? 'إعدادات الفروع' : 'Branch settings'}
+                        </h3>
+                        <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
+                          {isAr
+                            ? 'اختر الفرع وحدّث بياناته، حالة التفعيل، ورابط المنيو أو كود الـ QR.'
+                            : 'Choose a branch to update its data, status, and menu link / QR code.'}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2 md:items-end">
+                        <label className="text-[11px] text-gray-600 dark:text-gray-300">
+                          {isAr ? 'اختر الفرع' : 'Select branch'}
+                        </label>
+                        <select
+                          value={selectedBranchId}
+                          onChange={handleBranchSelect}
+                          className="w-full md:w-64 text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                        >
+                          <option value="">{isAr ? 'اختر فرعًا' : 'Select a branch'}</option>
+                          {branches.map((branch) => (
+                            <option key={branch.id} value={branch.id}>
+                              {branch.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
 
+                    {!selectedBranch && (
+                      <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm px-4 py-3 rounded-2xl dark:bg-yellow-900/30 dark:border-yellow-800 dark:text-yellow-100">
+                        {isAr
+                          ? 'اختر فرعًا من القائمة لمعاينة بياناته وتعديلها.'
+                          : 'Select a branch to view and edit its settings.'}
+                      </div>
+                    )}
+
+                    {selectedBranch && (
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="md:col-span-2 space-y-4">
+                          <form onSubmit={saveBranchSettings} className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                                {isAr ? 'اسم الفرع' : 'Branch name'}
+                              </label>
+                              <input
+                                type="text"
+                                name="name"
+                                value={branchForm.name}
+                                onChange={handleBranchChange}
+                                className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                                {isAr ? 'الهاتف / الواتساب' : 'Phone / WhatsApp'}
+                              </label>
+                              <input
+                                type="text"
+                                name="phone"
+                                value={branchForm.phone}
+                                onChange={handleBranchChange}
+                                className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                                {isAr ? 'العنوان' : 'Address'}
+                              </label>
+                              <textarea
+                                name="address"
+                                rows={2}
+                                value={branchForm.address}
+                                onChange={handleBranchChange}
+                                className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                              />
+                            </div>
+                            <div className="md:col-span-2 flex items-center gap-2">
+                              <input
+                                id="branch_is_active"
+                                type="checkbox"
+                                name="is_active"
+                                checked={branchForm.is_active}
+                                onChange={handleBranchChange}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                              <label htmlFor="branch_is_active" className="text-sm text-gray-700 dark:text-gray-200">
+                                {isAr ? 'تفعيل الفرع' : 'Activate branch'}
+                              </label>
+                            </div>
+
+                            <div className="md:col-span-2 flex justify-end gap-2">
+                              <button
+                                type="submit"
+                                disabled={savingBranch}
+                                className="text-sm px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                {savingBranch ? (isAr ? 'جارٍ الحفظ...' : 'Saving...') : (isAr ? 'حفظ إعدادات الفرع' : 'Save branch settings')}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl p-3">
+                            <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 mb-2">
+                              {isAr ? 'رابط المنيو' : 'Menu link'}
+                            </p>
+                            <div className="text-[11px] text-gray-700 dark:text-gray-200 break-all">
+                              {branchMenuUrl(selectedBranch.id)}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                copyValue(
+                                  branchMenuUrl(selectedBranch.id),
+                                  isAr ? 'تم نسخ رابط منيو الفرع' : 'Branch menu link copied'
+                                )
+                              }
+                              className="mt-2 w-full text-sm px-3 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-100 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                            >
+                              {isAr ? 'نسخ الرابط' : 'Copy link'}
+                            </button>
+                          </div>
+
+                          <div className="bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-800 rounded-2xl p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                                {isAr ? 'QR كود الفرع' : 'Branch QR'}
+                              </p>
+                              {selectedBranch.is_active === false && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-200 text-gray-700 dark:bg-slate-800 dark:text-gray-300">
+                                  {isAr ? 'متوقف' : 'Inactive'}
+                                </span>
+                              )}
+                            </div>
+
+                            {selectedBranch.qr_menu_base64 ? (
+                              <img
+                                alt={selectedBranch.name}
+                                className="w-40 h-40 rounded-xl border border-gray-200 dark:border-slate-700 bg-white mx-auto"
+                                src={`data:image/png;base64,${selectedBranch.qr_menu_base64}`}
+                              />
+                            ) : (
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {isAr ? 'لا يوجد QR متاح لهذا الفرع بعد.' : 'No QR available yet for this branch.'}
+                              </p>
+                            )}
+
+                            <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                              {isAr
+                                ? 'انسخ الرابط أو اطبع الكود لمشاركته مع العملاء لهذا الفرع فقط.'
+                                : 'Copy the link or print the QR to share this branch only.'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
                 {activeTab === 'paymob' && (
                   <section className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 md:p-5 space-y-4">
                     <div>
