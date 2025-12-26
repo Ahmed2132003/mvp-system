@@ -168,6 +168,11 @@ export default function EmployeeProfile() {
     advances: '',
   });
   const [deletingPayrollId, setDeletingPayrollId] = useState(null);
+  const [payrollFilters, setPayrollFilters] = useState({
+    fromMonth: '',
+    toMonth: '',
+    status: 'all',
+  });
 
   const canManage = user?.is_superuser || ['OWNER', 'MANAGER'].includes(user?.role);
 
@@ -424,7 +429,7 @@ export default function EmployeeProfile() {
     );
   }, [ledger]);
 
-  const attendanceStats = useMemo(() => {
+  const attendanceStats = useMemo(() => {    
     const totalDays = new Set(
       attendance.map(a => a.work_date || (a.check_in ? String(a.check_in).slice(0, 10) : ''))
     ).size;
@@ -474,8 +479,42 @@ export default function EmployeeProfile() {
     };
   }, [attendance, payrolls, employee, selectedMonth, ledgerTotals]);    
 
+  const filteredPayrolls = useMemo(() => {
+    const sorted = [...payrolls].sort((a, b) => new Date(b.month) - new Date(a.month));
+    return sorted.filter((p) => {
+      const monthKey = p?.month ? String(p.month).slice(0, 7) : '';
+      if (payrollFilters.fromMonth && monthKey < payrollFilters.fromMonth) return false;
+      if (payrollFilters.toMonth && monthKey > payrollFilters.toMonth) return false;
+      if (payrollFilters.status === 'paid' && !p.is_paid) return false;
+      if (payrollFilters.status === 'unpaid' && p.is_paid) return false;
+      return true;
+    });
+  }, [payrolls, payrollFilters]);
+
+  const paidPayrollsHistory = useMemo(() => {
+    return filteredPayrolls
+      .filter((p) => p.is_paid)
+      .sort((a, b) => new Date(b.paid_at || b.month) - new Date(a.paid_at || a.month));
+  }, [filteredPayrolls]);
+
+  const setCurrentMonthFilter = () => {
+    setPayrollFilters((prev) => ({ ...prev, fromMonth: selectedMonth, toMonth: selectedMonth }));
+  };
+
+  const setLastQuarterFilter = () => {
+    const now = new Date();
+    const anchor = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const anchorKey = anchor.toISOString().slice(0, 7);
+    const currentKey = now.toISOString().slice(0, 7);
+    setPayrollFilters((prev) => ({ ...prev, fromMonth: anchorKey, toMonth: currentKey }));
+  };
+
+  const resetPayrollFilters = () => {
+    setPayrollFilters({ fromMonth: '', toMonth: '', status: 'all' });
+  };
+
   const getPayrollDisplay = useCallback(
-    (payroll) => {
+    (payroll) => {      
       const monthKey = payroll?.month ? String(payroll.month).slice(0, 7) : '';
       const isSelectedMonth = monthKey === selectedMonth;
 
@@ -532,7 +571,73 @@ export default function EmployeeProfile() {
       selectedMonth,
     ]
   );          
-  const updateEmployee = async () => {
+
+  const handlePayrollPrint = (payroll) => {
+    const payrollView = getPayrollDisplay(payroll);
+    const monthLabel = payrollView.monthKey || (payroll.month ? String(payroll.month).slice(0, 7) : '');
+    const paidLabel = payroll.is_paid
+      ? (isAr ? `مدفوع بتاريخ ${payroll.paid_at || '—'}` : `Paid on ${payroll.paid_at || '—'}`)
+      : isAr ? 'غير مدفوع' : 'Unpaid';
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) {
+      notifyError(isAr ? 'تعذر فتح نافذة الطباعة.' : 'Could not open print window.');
+      return;
+    }
+
+    const dir = isAr ? 'rtl' : 'ltr';
+    const title = isAr ? 'كشف المرتب' : 'Payroll slip';
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html lang="${lang}" dir="${dir}">
+        <head>
+          <meta charset="utf-8" />
+          <title>${title}</title>
+          <style>
+            body { font-family: 'Inter', system-ui, -apple-system, sans-serif; direction: ${dir}; padding: 24px; color: #111827; }
+            h1 { margin: 0 0 8px; }
+            .meta { color: #4b5563; margin-bottom: 16px; font-size: 13px; }
+            table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+            th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: ${isAr ? 'right' : 'left'}; font-size: 13px; }
+            th { background: #f3f4f6; }
+            .badge { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #e0f2fe; color: #075985; font-size: 12px; }
+            .footer { margin-top: 18px; font-size: 12px; color: #6b7280; }
+          </style>
+        </head>
+        <body>
+          <h1>${title}</h1>
+          <div class="meta">
+            ${isAr ? 'الموظف:' : 'Employee:'} ${employee?.user?.name || employee?.user?.email || '—'}<br/>
+            ${isAr ? 'الشهر:' : 'Month:'} ${monthLabel || '—'} • <span class="badge">${paidLabel}</span><br/>
+            ${isAr ? 'الفرع:' : 'Branch:'} ${employee?.store_name || '—'}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>${isAr ? 'البند' : 'Item'}</th>
+                <th>${isAr ? 'القيمة' : 'Amount'}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>${isAr ? 'أساس حضور' : 'Attendance base'}</td><td>${numberFormatter.format(payrollView.baseSalary || 0)} ${moneyLabel}</td></tr>
+              <tr><td>${isAr ? 'الحوافز' : 'Bonuses'}</td><td>${numberFormatter.format(payrollView.bonuses || 0)} ${moneyLabel}</td></tr>
+              <tr><td>${isAr ? 'جزاءات التأخير' : 'Late penalties'}</td><td>${numberFormatter.format(payrollView.latePenalties || 0)} ${moneyLabel}</td></tr>
+              <tr><td>${isAr ? 'السلف' : 'Advances'}</td><td>${numberFormatter.format(payrollView.advances || 0)} ${moneyLabel}</td></tr>
+              <tr><td>${isAr ? 'إجمالي الخصومات' : 'Total deductions'}</td><td>${numberFormatter.format(payrollView.totalDeductions || 0)} ${moneyLabel}</td></tr>
+              <tr><td><strong>${isAr ? 'الصافي المستحق' : 'Net payable'}</strong></td><td><strong>${numberFormatter.format(payrollView.net || 0)} ${moneyLabel}</strong></td></tr>
+            </tbody>
+          </table>
+          <div class="footer">
+            ${isAr ? 'استخدم مربع الطباعة للاختيار بين الطابعة أو الحفظ كملف PDF.' : 'Use the print dialog to send to a printer or save as PDF.'}
+          </div>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const updateEmployee = async () => {    
         const targetId = employeeId || id;
     if (!targetId || targetId === 'me') {
       notifyError(isAr ? 'لم يتم تحميل بيانات الموظف بعد' : 'Employee data not loaded yet');
@@ -1140,7 +1245,7 @@ export default function EmployeeProfile() {
                           <div className="flex flex-wrap gap-2">
                             <button onClick={generatePayroll} className="px-3 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition">
                               {isAr ? 'احتساب مرتب جديد' : 'Generate New Payroll'}
-                            </button>                            
+                            </button>                                                                               
                             <button
                               onClick={() => {
                                 setActiveTab('ledger');
@@ -1168,10 +1273,103 @@ export default function EmployeeProfile() {
                           </div>
                         )}
 
+                        <div className="bg-white border border-gray-100 rounded-2xl p-3 md:p-4 space-y-3 dark:bg-slate-900 dark:border-slate-800">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-50">{isAr ? 'فلاتر التوقيت والفترات' : 'Date & period filters'}</h4>
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                {isAr ? 'حدّد نطاق الأشهر لعرض كشوف المرتبات الحالية أو السابقة.' : 'Pick a month range to focus on current or past payroll slips.'}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={setCurrentMonthFilter}
+                                className="px-3 py-1.5 rounded-full border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100"
+                              >
+                                {isAr ? 'الشهر الحالي' : 'Current month'}
+                              </button>
+                              <button
+                                onClick={setLastQuarterFilter}
+                                className="px-3 py-1.5 rounded-full border border-amber-200 bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-100"
+                              >
+                                {isAr ? 'آخر ٣ شهور' : 'Last 3 months'}
+                              </button>
+                              <button
+                                onClick={resetPayrollFilters}
+                                className="px-3 py-1.5 rounded-full border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                              >
+                                {isAr ? 'إعادة التعيين' : 'Reset filters'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-3 text-xs">
+                            <label className="flex flex-col gap-1">
+                              <span className="text-gray-600 dark:text-gray-300">{isAr ? 'من شهر' : 'From month'}</span>
+                              <input
+                                type="month"
+                                value={payrollFilters.fromMonth}
+                                onChange={(e) => setPayrollFilters((prev) => ({ ...prev, fromMonth: e.target.value }))}
+                                className="rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-gray-600 dark:text-gray-300">{isAr ? 'إلى شهر' : 'To month'}</span>
+                              <input
+                                type="month"
+                                value={payrollFilters.toMonth}
+                                onChange={(e) => setPayrollFilters((prev) => ({ ...prev, toMonth: e.target.value }))}
+                                className="rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-gray-600 dark:text-gray-300">{isAr ? 'الحالة' : 'Status'}</span>
+                              <select
+                                value={payrollFilters.status}
+                                onChange={(e) => setPayrollFilters((prev) => ({ ...prev, status: e.target.value }))}
+                                className="rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                              >
+                                <option value="all">{isAr ? 'الكل' : 'All'}</option>
+                                <option value="paid">{isAr ? 'مدفوعة' : 'Paid'}</option>
+                                <option value="unpaid">{isAr ? 'غير مدفوعة' : 'Unpaid'}</option>
+                              </select>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="bg-white border border-gray-100 rounded-2xl p-3 md:p-4 dark:bg-slate-900 dark:border-slate-800">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-2 dark:text-gray-50">{isAr ? 'السجلات المدفوعة السابقة' : 'Paid payroll history'}</h4>
+                          {paidPayrollsHistory.length === 0 ? (
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{isAr ? 'لا توجد سجلات مدفوعة ضمن النطاق المحدد.' : 'No paid payrolls in the selected window.'}</p>
+                          ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {paidPayrollsHistory.slice(0, 6).map((p) => {
+                                const payrollView = getPayrollDisplay(p);
+                                return (
+                                  <div key={p.id} className="border border-gray-100 rounded-xl p-3 bg-gray-50/70 flex flex-col gap-1 dark:bg-slate-800/70 dark:border-slate-700">
+                                    <div className="flex items-center justify-between text-sm font-semibold text-gray-800 dark:text-gray-100">
+                                      <span>{isAr ? 'شهر' : 'Month'} {String(p.month).slice(0, 7)}</span>
+                                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100">
+                                        {isAr ? 'مدفوع' : 'Paid'}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-gray-600 dark:text-gray-300">
+                                      {isAr ? 'تاريخ الدفع:' : 'Paid at:'} {p.paid_at || '—'}
+                                    </p>
+                                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-50">
+                                      {numberFormatter.format(payrollView.net || 0)} {moneyLabel}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
                         <div className="bg-blue-50 border border-blue-100 text-blue-900 text-xs rounded-2xl p-3 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-100">
                           <p className="font-semibold">
                             {isAr ? 'الصافي المعتمد لهذا الشهر' : 'Payable net for this month'}
-                          </p>
+                          </p>                          
                           <p className="mt-1">
                             {numberFormatter.format(attendanceStats.netSalary)} {moneyLabel}{' '}
                             {isAr
@@ -1182,16 +1380,20 @@ export default function EmployeeProfile() {
 
                         {payrolls.length === 0 ? (
                           <p className="text-xs text-gray-500 dark:text-gray-400">{isAr ? 'لا توجد مرتبات حتى الآن.' : 'No payroll records yet.'}</p>
+                        ) : filteredPayrolls.length === 0 ? (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {isAr ? 'لا توجد سجلات ضمن الفلاتر الحالية.' : 'No payrolls match the current filters.'}
+                          </p>
                         ) : (
                           <>
                             {/* Mobile cards */}
                             <div className="space-y-2 md:hidden">
-                              {payrolls.map((p) => {
+                              {filteredPayrolls.map((p) => {
                                 const payrollView = getPayrollDisplay(p);
                                 return (
                                 <div key={p.id} className="border border-gray-100 rounded-2xl p-3 bg-gray-50/60 dark:bg-slate-800/70 dark:border-slate-700">
                                   <div className="flex items-center justify-between">
-                                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">{isAr ? 'الشهر' : 'Month'}: {p.month}</span>
+                                    <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">{isAr ? 'الشهر' : 'Month'}: {p.month}</span>                                                                      
                                     <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-gray-200">
                                       {p.is_locked ? (isAr ? 'مغلق 🔒' : 'Locked 🔒') : isAr ? 'مفتوح' : 'Open'}
                                     </span>
@@ -1217,11 +1419,17 @@ export default function EmployeeProfile() {
                                           : `Payable net amount: ${numberFormatter.format(payrollView.net || 0)} ${moneyLabel}`}
                                       </div>
                                     )}
+                                    <button
+                                      onClick={() => handlePayrollPrint(p)}
+                                      className="col-span-2 px-3 py-2 rounded-xl border border-gray-200 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                                    >
+                                      {isAr ? 'طباعة / PDF' : 'Print / PDF'}
+                                    </button>
                                     {canManage && !p.is_paid && (
                                       <button
                                         onClick={() => markPayrollPaid(p.id)}
                                         disabled={markingPayrollId === p.id}
-                                        className="col-span-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 transition disabled:opacity-60"                                        
+                                        className="col-span-2 px-3 py-2 rounded-xl bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 transition disabled:opacity-60"                                                                                                                    
                                       >
                                         {markingPayrollId === p.id ? (isAr ? 'جاري التعليم...' : 'Marking...') : isAr ? 'تعليم كمدفوع' : 'Mark as paid'}
                                       </button>
@@ -1328,17 +1536,18 @@ export default function EmployeeProfile() {
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'السلف' : 'Advances'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الصافي' : 'Net'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الإغلاق' : 'Status'}</th>                                    
-                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الدفع' : 'Payment'}</th>                                    
-                                    {canManage && <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'إجراءات' : 'Actions'}</th>}
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الدفع' : 'Payment'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'طباعة' : 'Print'}</th>                                    
+                                    {canManage && <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'إجراءات' : 'Actions'}</th>}                                    
                                   </tr>
                                 </thead>
                                 <tbody>                                  
-                                  {payrolls.map((p) => {
+                                  {filteredPayrolls.map((p) => {
                                     const payrollView = getPayrollDisplay(p);
                                     return (
                                     <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{p.month}</td>
-                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.attendanceDays || 0)}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.attendanceDays || 0)}</td>                                      
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.monthlySalary || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.baseSalary || 0)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(payrollView.bonuses || 0)}</td>
@@ -1373,11 +1582,19 @@ export default function EmployeeProfile() {
                                           <span className="text-[11px] text-red-600 dark:text-red-300">{isAr ? 'غير مدفوع' : 'Unpaid'}</span>
                                         )}
                                       </td>                                      
+                                      <td className="py-2 px-2 whitespace-nowrap">
+                                        <button
+                                          onClick={() => handlePayrollPrint(p)}
+                                          className="px-3 py-1 rounded-full border border-gray-200 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-800"
+                                        >
+                                          {isAr ? 'طباعة / PDF' : 'Print / PDF'}
+                                        </button>
+                                      </td>
                                       {canManage && (
                                         <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">
                                           {payrollEdit.id === p.id ? (
                                             <div className="flex flex-col gap-2 text-[11px]">
-                                              <div className="grid grid-cols-2 gap-2">
+                                              <div className="grid grid-cols-2 gap-2">                                                
                                                 <input
                                                   type="number"
                                                   className="rounded-lg border border-gray-200 px-2 py-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
