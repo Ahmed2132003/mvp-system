@@ -214,7 +214,13 @@ export default function SettingsPage() {
 
         try {
           const branchesRes = await api.get('/branches/');
-          const list = branchesRes.data || [];
+          const branchData = branchesRes.data;
+          const list = Array.isArray(branchData)
+            ? branchData
+            : Array.isArray(branchData?.results)
+              ? branchData.results
+              : [];
+
           setBranches(list);
 
           if (list.length && !selectedBranchId) {
@@ -223,7 +229,7 @@ export default function SettingsPage() {
         } catch (branchErr) {
           console.error('خطأ في تحميل الفروع:', branchErr);
           setBranches([]);
-        }
+        }        
       }
 
       setStoreSettings({
