@@ -13,6 +13,7 @@ from rest_framework_simplejwt.views import (
 
 # استيراد LogoutView من core
 from core.views import LogoutView
+from attendance import views as attendance_views
 
 # استيراد كل الـ ViewSets عشان الـ router
 from core.views import EmployeeViewSet
@@ -79,6 +80,10 @@ urlpatterns = [
 
     # باقي الـ apps
     path('api/v1/payments/', include('payments.urls')),
+
+    # Public QR links (بدون /api) عشان QR القديمة تشتغل
+    path('attendance/qr/', attendance_views.qr_redirect, name='attendance-qr-redirect-root'),
+    path('attendance/qr/use/<uuid:token>/', attendance_views.qr_use_page, name='attendance-qr-use-page-root'),
 ]
 
 # للـ media في الـ development
