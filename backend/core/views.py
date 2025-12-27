@@ -356,10 +356,12 @@ class EmployeeViewSet(viewsets.ModelViewSet):
                 "late_minutes": log.late_minutes,
                 "penalty": log.penalty_applied,
                 "duration": log.duration_minutes,
+                "gps": log.gps,
+                "location": log.location,
             }
             for log in logs
         ])
-
+        
     @action(detail=True, methods=["get"])
     def payrolls(self, request, pk=None):
         employee = self.get_object()

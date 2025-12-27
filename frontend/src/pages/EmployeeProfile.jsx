@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { notifyError, notifySuccess } from '../lib/notifications';
 import { useAuth } from '../hooks/useAuth';
+import { renderLocation } from './EmployeeAttendance';
 
 // =====================
 // Sidebar Navigation (Same style as Dashboard)
@@ -1196,25 +1197,30 @@ export default function EmployeeProfile() {
                                     <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">{isAr ? `سجل #${i + 1}` : `Record #${i + 1}`}</span>
                                     <span className="text-[11px] text-gray-500 dark:text-gray-400">{isAr ? 'المدة' : 'Duration'}: {a.duration || 0}</span>
                                   </div>
-                                  <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
-                                    <span>{isAr ? 'الدخول' : 'In'}: {a.check_in || '—'}</span>
-                                    <span>{isAr ? 'الخروج' : 'Out'}: {a.check_out || '—'}</span>
-                                  </div>
-                                  <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
-                                    <span>{isAr ? 'تأخير' : 'Late'}: {a.late_minutes || 0}</span>
-                                    <span>{isAr ? 'غرامة' : 'Penalty'}: {numberFormatter.format(a.penalty || 0)} {moneyLabel}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
+                          <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
+                            <span>{isAr ? 'الدخول' : 'In'}: {a.check_in || '—'}</span>
+                            <span>{isAr ? 'الخروج' : 'Out'}: {a.check_out || '—'}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
+                            <span>{isAr ? 'موقع الحضور' : 'Check-in location'}: {renderLocation(a.gps || a.location, isAr)}</span>
+                            <span>{isAr ? 'موقع الانصراف' : 'Check-out location'}: {renderLocation(a.location, isAr)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-gray-600 dark:text-gray-300">
+                            <span>{isAr ? 'تأخير' : 'Late'}: {a.late_minutes || 0}</span>
+                            <span>{isAr ? 'غرامة' : 'Penalty'}: {numberFormatter.format(a.penalty || 0)} {moneyLabel}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                             {/* Desktop/tablet table */}
                             <div className="hidden md:block overflow-x-auto">
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الدخول' : 'Check-in'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'موقع الحضور' : 'Check-in location'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'الخروج' : 'Check-out'}</th>
+                                    <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'موقع الانصراف' : 'Check-out location'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'تأخير' : 'Late'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'غرامة' : 'Penalty'}</th>
                                     <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">{isAr ? 'المدة' : 'Duration'}</th>
@@ -1224,14 +1230,16 @@ export default function EmployeeProfile() {
                                   {attendance.map((a, i) => (
                                     <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{a.check_in || '—'}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-700 dark:text-gray-200">{renderLocation(a.gps || a.location, isAr)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{a.check_out || '—'}</td>
+                                      <td className="py-2 px-2 whitespace-nowrap text-gray-700 dark:text-gray-200">{renderLocation(a.location, isAr)}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{a.late_minutes || 0}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{numberFormatter.format(a.penalty || 0)} {moneyLabel}</td>
                                       <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">{a.duration || 0}</td>
                                     </tr>
                                   ))}
                                 </tbody>
-                              </table>
+                              </table>                              
                             </div>                            
                           </>
                         )}

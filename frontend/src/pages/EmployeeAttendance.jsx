@@ -104,10 +104,10 @@ function fmtTime(value, locale = 'ar-EG') {
   }
 }
 
-function renderLocation(loc, isAr) {
+ function renderLocation(loc, isAr) {
   if (!loc?.lat || !loc?.lng) return '—';
   const accuracy = loc.accuracy
-    ? isAr
+    ? isAr    
       ? ` (±${Math.round(loc.accuracy)}م)`      
       : ` (±${Math.round(loc.accuracy)}m)`
     : '';

@@ -56,7 +56,7 @@ def attendance_check(request):
         return Response({"detail": "QR لا يخص هذا الفرع."}, status=400)
 
     gps = request.data.get("gps") or {}
-    location = request.data.get("location") or gps
+    location = request.data.get("location") or gps    
     ip = request.META.get("REMOTE_ADDR")
     user_agent = (request.META.get("HTTP_USER_AGENT") or "")[:500]
 
@@ -77,13 +77,14 @@ def attendance_check(request):
     # ✅ لو فيه active log قديم (مثلا نسي يقفل امبارح) اقفله تلقائياً
     if active_log and active_log.work_date and active_log.work_date != work_date:
         active_log.check_out = now
-        active_log.gps = gps or active_log.gps
+        # gps يحتفظ بإحداثيات الحضور الأولى، بينما location تخزن إحداثيات الانصراف
+        active_log.gps = active_log.gps or gps
         active_log.ip_address = ip
         active_log.user_agent = user_agent
         active_log.location = location or active_log.location
         active_log.save()
         active_log = None
-        
+                
     if not active_log:
         try:
             log = AttendanceLog.objects.create(
@@ -119,12 +120,13 @@ def attendance_check(request):
         }, status=200)
         
     active_log.check_out = now
-    active_log.gps = gps or active_log.gps
+    # لا نستبدل gps حتى نحتفظ بموقع الحضور، ونخزن موقع الانصراف في location
+    active_log.gps = active_log.gps or gps
     active_log.location = location or active_log.location
     active_log.ip_address = ip
     active_log.user_agent = user_agent
     active_log.save()
-
+    
     return Response({
         "status": "checkout",
         "message": "تم تسجيل الانصراف بنجاح",
