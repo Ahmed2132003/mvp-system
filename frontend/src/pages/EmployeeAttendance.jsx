@@ -108,10 +108,18 @@ function renderLocation(loc, isAr) {
   if (!loc?.lat || !loc?.lng) return '—';
   const accuracy = loc.accuracy
     ? isAr
-      ? ` (±${Math.round(loc.accuracy)}م)`
+      ? ` (±${Math.round(loc.accuracy)}م)`      
       : ` (±${Math.round(loc.accuracy)}m)`
     : '';
   return `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}${accuracy}`;
+}
+
+function getResultTimestamp(res) {
+  if (!res) return 0;
+  const candidate = res.check_out || res.check_in || res.work_date;
+  if (!candidate) return 0;
+  const ts = new Date(candidate).getTime();
+  return Number.isNaN(ts) ? 0 : ts;
 }
 
 // =====================
@@ -222,11 +230,14 @@ export default function EmployeeAttendance() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState(null);
 
   const [statusLoading, setStatusLoading] = useState(false);
   const [status, setStatus] = useState(null);
 
-  const monthly = status?.month || {};
+  const monthly = status?.month || {};  
   const salary = Number(status?.employee?.salary) || 0;
   const attendanceValue = Math.max(0, Number(monthly.attendance_value) || 0);
   const totalPenalties = Math.max(0, Number(monthly.penalties) || 0);
@@ -252,20 +263,84 @@ export default function EmployeeAttendance() {
     }
   }, [t]);
 
+  const fetchMyLogs = useCallback(async () => {
+    try {
+      setLogsLoading(true);
+      setLogsError(null);
+      const res = await api.get('/attendance/my-logs/', { params: { limit: 15 } });
+      setLogs(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail ||
+        t('تعذر جلب سجلات الحضور.', 'Failed to load attendance logs.');
+      setLogsError(msg);
+      notifyError(msg);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     fetchMyStatus();
-  }, [fetchMyStatus]);
+    fetchMyLogs();
+  }, [fetchMyLogs, fetchMyStatus]);
+
+  const buildResultFromLog = useCallback(
+    (log) => {
+      if (!log) return null;
+      const statusType = log.check_out ? 'checkout' : 'checkin';
+      const loc = log.location || log.gps;
+      let durationMinutes = null;
+      if (log.check_in && log.check_out) {
+        const diff =
+          new Date(log.check_out).getTime() - new Date(log.check_in).getTime();
+        if (!Number.isNaN(diff)) durationMinutes = Math.floor(diff / 60000);
+      }
+      return {
+        status: statusType,
+        message:
+          statusType === 'checkin'
+            ? t('آخر تسجيل حضور محفوظ', 'Last saved check-in')
+            : t('آخر تسجيل انصراف محفوظ', 'Last saved check-out'),
+        work_date: log.work_date,
+        check_in: log.check_in,
+        check_out: log.check_out,
+        is_late: log.is_late,
+        late_minutes: log.late_minutes,
+        penalty: typeof log.penalty_applied === 'number' ? log.penalty_applied : Number(log.penalty_applied || 0),
+        duration_minutes: durationMinutes,
+        gps: loc,
+        location: loc,
+      };
+    },
+    [t]
+  );
+
+  useEffect(() => {
+    if (!status) return;
+    const log = status.active_log || status.today_log;
+    if (!log) return;
+    const derived = buildResultFromLog(log);
+    if (!derived) return;
+    setResult((prev) => {
+      const prevTs = getResultTimestamp(prev);
+      const newTs = getResultTimestamp(derived);
+      if (!prev || newTs >= prevTs) {
+        return derived;
+      }
+      return prev;
+    });
+  }, [status, buildResultFromLog]);
 
   const handleSubmit = async () => {
     if (processing) return;
     setProcessing(true);
     setError(null);
-    setResult(null);
 
     try {
       const location = await getGeoLocation();
       if (!location?.lat || !location?.lng) {
-        throw new Error(
+        throw new Error(          
           t(
             'تعذر تحديد موقعك. من فضلك فعّل خدمة الموقع وحاول مرة أخرى.',
             'Could not detect your location. Please enable location services and try again.'
@@ -282,6 +357,7 @@ export default function EmployeeAttendance() {
       const usedCachedGps = Boolean(location.cached);
 
       const res = await api.post('/attendance/check/', payload);
+      const recordedLocation = res.data.location || res.data.gps || gpsPayload;
 
       setResult({
         status: res.data.status,
@@ -293,16 +369,18 @@ export default function EmployeeAttendance() {
         late_minutes: res.data.late_minutes,
         penalty: res.data.penalty,
         duration_minutes: res.data.duration_minutes,
-        gps: res.data.gps || payload.gps,
+        gps: recordedLocation,
+        location: recordedLocation,
         usedCachedGps,
       });
 
       fetchMyStatus();
+      fetchMyLogs();
 
       notifySuccess(res.data.message || t('تم تسجيل العملية بنجاح', 'Recorded successfully'));
       if (usedCachedGps) {
         notifyError(
-          t(
+          t(            
             'تم استخدام آخر موقع محفوظ. يرجى تفعيل خدمة الموقع لتسجيل موقعك الحالي.',
             'Last saved location was used. Please enable location services to record your current position.'
           )
@@ -492,15 +570,15 @@ export default function EmployeeAttendance() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-sm md:text-base font-bold text-gray-900 dark:text-gray-50">
-                    {t('تسجيل حضور الموظفين', 'Employee Attendance')}
-                  </h3>
-                  <p className="text-[11px] md:text-xs text-gray-500 mt-1 dark:text-gray-400">
-                    {t(
-                      'اضغط على الزر لتسجيل الدخول أو الانصراف. يجب تفعيل الموقع وسيتم تسجيل التأخير والخصومات تلقائيًا.',
-                      'Tap the button to check in or check out. Location must be enabled; lateness and penalties are calculated automatically.'
-                    )}
-                  </p>
-                </div>
+                  {t('تسجيل حضور الموظفين', 'Employee Attendance')}
+                </h3>
+                <p className="text-[11px] md:text-xs text-gray-500 mt-1 dark:text-gray-400">
+                  {t(
+                    'يتم التسجيل تلقائيًا عبر QR أو الرابط المولد. يجب تفعيل الموقع وسيتم تسجيل التأخير والخصومات تلقائيًا.',
+                    'Check-in/out happens automatically via your QR or generated link. Location must be enabled; lateness and penalties are calculated automatically.'
+                  )}
+                </p>
+              </div>
 
                 <Link
                   to="/dashboard"
@@ -621,8 +699,8 @@ export default function EmployeeAttendance() {
 
               <div className="mt-4 text-[11px] text-gray-500 bg-gray-50 border border-gray-100 rounded-2xl px-4 py-3 dark:bg-slate-800/60 dark:border-slate-700 dark:text-gray-300">
                 {t(
-                  'ملاحظة: الضغط على الزر يقوم تلقائيًا بتحديد ما إذا كنت تحتاج تسجيل حضور أو انصراف بناءً على آخر جلسة.',
-                  'Note: the button automatically decides whether you are checking in or out based on your last session.'
+                  'ملاحظة: النظام يحدد تلقائيًا ما إذا كنت في حالة حضور أو انصراف بناءً على آخر جلسة.',
+                  'Note: the system automatically decides whether you are checking in or out based on your last session.'
                 )}
               </div>
             </section>
@@ -719,26 +797,30 @@ export default function EmployeeAttendance() {
                   {t('تسجيل حضور/انصراف', 'Check-in / Check-out')}
                 </p>
                 <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
-                  {t('سيتم طلب إذن الموقع قبل إرسال الطلب.', 'Location permission will be requested before sending.')}
+                  {t('سيتم طلب إذن الموقع تلقائيًا عند استخدام QR أو الرابط.', 'Location permission is requested automatically when you use the QR or link.')}
                 </p>
+                
+                <div className="mt-4 w-full rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-[11px] text-gray-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-gray-200">
+                  {t(
+                    'تم إخفاء زر التسجيل المباشر. استخدم QR الحضور أو الرابط المولد لإتمام العملية بشكل آمن.',
+                    'The manual record button is hidden. Use your attendance QR or generated link to complete the action securely.'
+                  )}
+                </div>
 
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  disabled={processing}
-                  className={`mt-4 w-full text-sm font-semibold rounded-2xl px-4 py-3 border transition ${
-                    processing
-                      ? 'bg-gray-200 border-gray-200 text-gray-500 cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-gray-400'
-                      : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
-                  }`}
+                  className="hidden"
+                  aria-hidden
+                  tabIndex={-1}
                 >
-                  {processing ? t('جاري التسجيل...', 'Recording...') : t('تسجيل الآن', 'Record now')}
+                  {t('تسجيل الآن', 'Record now')}
                 </button>
 
                 {error && (
                   <div className="mt-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl px-3 py-2 dark:bg-red-900/30 dark:border-red-800 dark:text-red-100">
                     {error}
-                  </div>
+                  </div>                  
                 )}
               </div>
 
@@ -788,14 +870,13 @@ export default function EmployeeAttendance() {
                         <p>{t('المدة بالدقائق:', 'Duration (min):')} {result.duration_minutes}</p>
                       )}
 
-                      {result.gps && (
+                      {result.location || result.gps ? (
                         <p>
                           {t('الموقع المسجل:', 'Recorded location:')}{' '}
-                          {renderLocation(result.gps, isAr)}
+                          {renderLocation(result.location || result.gps, isAr)}
                         </p>
-                      )}
+                      ) : null}
                     </div>
-
                     <div className="mt-2 text-[11px] text-gray-700 dark:text-gray-200">
                       {isCheckin ? (
                         <div>{t('تم تسجيل دخولك. المرة القادمة سيتم تسجيل الانصراف تلقائيًا.', 'Checked in. Next time will be a check-out automatically.')}</div>
@@ -823,11 +904,80 @@ export default function EmployeeAttendance() {
               </div>
             </section>
 
+            {/* Logs */}
+            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 md:p-5 dark:bg-slate-900 dark:border-slate-800">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                    {t('سجلات الحضور والانصراف', 'Attendance logs')}
+                  </p>
+                  <p className="text-[11px] text-gray-500 mt-1 dark:text-gray-400">
+                    {t('أحدث العمليات المسجلة تظهر هنا.', 'Your most recent recorded actions appear here.')}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={fetchMyLogs}
+                  className="text-[11px] px-3 py-1.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
+                >
+                  {t('تحديث', 'Refresh')}
+                </button>
+              </div>
+
+              {logsLoading && (
+                <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  {t('جاري تحميل السجلات...', 'Loading logs...')}
+                </div>
+              )}
+
+              {logsError && (
+                <div className="mt-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl px-3 py-2 dark:bg-red-900/30 dark:border-red-800 dark:text-red-100">
+                  {logsError}
+                </div>
+              )}
+
+              {!logsLoading && !logsError && logs.length === 0 && (
+                <div className="mt-3 bg-gray-50 border border-dashed border-gray-200 text-gray-500 text-xs rounded-2xl px-3 py-6 text-center dark:bg-slate-800/60 dark:border-slate-700 dark:text-gray-300">
+                  {t('لا توجد سجلات متاحة بعد.', 'No logs are available yet.')}
+                </div>
+              )}
+
+              {!logsLoading && logs.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50 dark:bg-slate-800 dark:border-slate-700">
+                        <th className="py-2 px-2 text-left font-semibold text-gray-700 dark:text-gray-200">{t('التاريخ', 'Date')}</th>
+                        <th className="py-2 px-2 text-left font-semibold text-gray-700 dark:text-gray-200">{t('الدخول', 'Check-in')}</th>
+                        <th className="py-2 px-2 text-left font-semibold text-gray-700 dark:text-gray-200">{t('الخروج', 'Check-out')}</th>
+                        <th className="py-2 px-2 text-left font-semibold text-gray-700 dark:text-gray-200">{t('الموقع', 'Location')}</th>
+                        <th className="py-2 px-2 text-left font-semibold text-gray-700 dark:text-gray-200">{t('الطريقة', 'Method')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logs.map((log) => (
+                        <tr key={log.id} className="border-b border-gray-50 hover:bg-gray-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70">
+                          <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{fmtDateTime(log.work_date, locale)}</td>
+                          <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{fmtDateTime(log.check_in, locale)}</td>
+                          <td className="py-2 px-2 whitespace-nowrap text-gray-800 dark:text-gray-100">{fmtDateTime(log.check_out, locale)}</td>
+                          <td className="py-2 px-2 whitespace-nowrap text-gray-700 dark:text-gray-200">
+                            {renderLocation(log.location || log.gps, isAr)}
+                          </td>
+                          <td className="py-2 px-2 whitespace-nowrap text-gray-600 uppercase dark:text-gray-300">{log.method || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
             {/* Refresh status hint */}
             <div className="text-[11px] text-gray-400 dark:text-gray-500">
               {t('سيتم تحديث ملخصك تلقائيًا بعد كل عملية.', 'Your summary refreshes automatically after each operation.')}
             </div>
-          </div>
+          </div>          
         </main>
       </div>
     </div>

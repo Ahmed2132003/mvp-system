@@ -147,7 +147,7 @@ def _month_range(target: date):
 @permission_classes([IsAuthenticated])
 def my_attendance_status(request):
     """
-    إرجاع ملخص سريع للموظف الحالي:
+    إرجاع ملخص سريع للموظف الحالي:    
     - بيانات الموظف والفرع
     - آخر جلسة حضور/انصراف نشطة
     - ملخص الشهر (حضور، غياب، إجازات، تأخير، غرامات)
@@ -229,7 +229,7 @@ def my_attendance_status(request):
             "employee": {
                 "id": employee.id,
                 "name": employee.user.name or employee.user.email,
-                "store": employee.store_id,
+                "store": employee.store_id,                
                 "store_name": getattr(employee.store, "name", None),
                 "salary": employee.salary,
                 "qr_attendance_base64": getattr(employee, "qr_attendance_base64", None),
@@ -263,9 +263,40 @@ def my_attendance_status(request):
         }
     )
                 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_attendance_logs(request):
+    """
+    إرجاع آخر سجلات الحضور/الانصراف للموظف الحالي مع إمكانية التصفية بالشهر.
+    """
+    employee = getattr(request.user, "employee", None)
+    if not employee:
+        return Response({"detail": "لا يوجد ملف موظف."}, status=404)
+
+    month_str = request.GET.get("month")
+    limit = request.GET.get("limit")
+    try:
+        max_rows = min(100, max(1, int(limit))) if limit else 20
+    except Exception:
+        max_rows = 20
+
+    logs_qs = AttendanceLog.objects.filter(employee=employee)
+
+    if month_str:
+        try:
+            target_month = date.fromisoformat(f"{month_str}-01")
+            start, end = _month_range(target_month)
+            logs_qs = logs_qs.filter(work_date__range=(start, end))
+        except Exception:
+            pass
+
+    logs_qs = logs_qs.order_by("-check_in")[:max_rows]
+    data = AttendanceLogSerializer(logs_qs, many=True).data
+    return Response(data)
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def create_qr_link(request):
+def create_qr_link(request):    
     """
     ينشئ رابط حضور/انصراف لمرة واحدة بناءً على حالة الموظف الحالية.
     - QR ثابت لكل موظف -> يوجّه إلى /attendance/qr/?employee=..&store=..
