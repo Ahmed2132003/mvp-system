@@ -3,8 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { notifyError, notifySuccess } from '../lib/notifications';
 import { useAuth } from '../hooks/useAuth';
-import { renderLocation } from './EmployeeAttendance';
-
+import { renderLocation } from '../lib/location';
 // =====================
 // Sidebar Navigation (Same style as Dashboard)
 // =====================

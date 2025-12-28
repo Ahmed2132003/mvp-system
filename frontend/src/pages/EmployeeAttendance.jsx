@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifySuccess, notifyError } from '../lib/notifications';
+import { renderLocation } from '../lib/location';
 
 const LAST_GPS_KEY = 'attendance:last-gps';
 
@@ -102,16 +103,6 @@ function fmtTime(value, locale = 'ar-EG') {
   } catch {
     return String(value);
   }
-}
-
- function renderLocation(loc, isAr) {
-  if (!loc?.lat || !loc?.lng) return '—';
-  const accuracy = loc.accuracy
-    ? isAr    
-      ? ` (±${Math.round(loc.accuracy)}م)`      
-      : ` (±${Math.round(loc.accuracy)}m)`
-    : '';
-  return `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}${accuracy}`;
 }
 
 function getResultTimestamp(res) {
