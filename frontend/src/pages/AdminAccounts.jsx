@@ -39,12 +39,13 @@ export default function AdminAccounts() {
       const res = await api.get('/admin/users/', {
         params: roleFilter ? { role: roleFilter } : {},
       });
-      setAccounts(res.data || []);
+      const results = Array.isArray(res.data) ? res.data : res.data?.results || [];
+      setAccounts(results);
       setError('');
     } catch (err) {
       console.error(err);
       setError('تعذر تحميل الحسابات، حاول لاحقًا.');
-      notifyError('تعذر تحميل الحسابات، حاول لاحقًا.');
+      notifyError('تعذر تحميل الحسابات، حاول لاحقًا.');      
     } finally {
       setLoading(false);
     }
