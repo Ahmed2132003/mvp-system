@@ -57,19 +57,88 @@ class User(AbstractUser):
     # important: you’re using activation via magic-link
     is_active = models.BooleanField(default=False)
 
+    # اشتراك وتجربة
+    is_payment_verified = models.BooleanField(default=False)
+    trial_starts_at = models.DateTimeField(null=True, blank=True)
+    trial_ends_at = models.DateTimeField(null=True, blank=True)
+
     # Magic Link Fields
     verification_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, null=True, blank=True)
     verification_token_expires_at = models.DateTimeField(null=True, blank=True)
-
+    
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
     objects = UserManager()
 
+    def ensure_trial_window(self):
+        """
+        يضمن وجود فترة تجريبية لأصحاب ومديري الحسابات غير المفعّلين.
+        يرجع True لو حصل تعديل.
+        """
+        changed = False
+
+        if self.is_superuser:
+            return changed
+
+        if self.role in [self.RoleChoices.OWNER, self.RoleChoices.MANAGER] and not self.is_payment_verified:
+            if not self.trial_starts_at:
+                self.trial_starts_at = timezone.now()
+                changed = True
+            if not self.trial_ends_at and self.trial_starts_at:
+                self.trial_ends_at = self.trial_starts_at + timezone.timedelta(days=14)
+                changed = True
+
+        return changed
+
+    @property
+    def is_trial_expired(self):
+        if self.is_payment_verified or self.is_superuser:
+            return False
+
+        if self.role not in [self.RoleChoices.OWNER, self.RoleChoices.MANAGER]:
+            return False
+
+        if not self.trial_ends_at:
+            return False
+
+        return timezone.now() > self.trial_ends_at
+
+    @property
+    def trial_days_left(self):
+        if self.is_payment_verified or self.is_superuser:
+            return None
+
+        if not self.trial_ends_at:
+            return None
+
+        delta = self.trial_ends_at - timezone.now()
+        days = int(delta.total_seconds() // 86400)
+        return max(days, 0)
+
+    @property
+    def has_active_access(self):
+        if self.is_superuser or self.is_payment_verified:
+            return True
+
+        if self.role in [self.RoleChoices.OWNER, self.RoleChoices.MANAGER]:
+            if not self.trial_ends_at:
+                return True
+            return timezone.now() <= self.trial_ends_at
+
+        return True
+
+    @property
+    def access_block_reason(self):
+        if self.has_active_access:
+            return None
+
+        return "انتهت الفترة التجريبية الخاصة بحسابك. برجاء التواصل مع الشركة للترقية وتفعيل الحساب."  # noqa: E501
+
     def send_verification_link(self):
         if not self.email:
             return False
-
+        
         self.verification_token = uuid.uuid4()
         self.verification_token_expires_at = timezone.now() + timezone.timedelta(minutes=15)
         self.save(update_fields=["verification_token", "verification_token_expires_at"])
@@ -105,6 +174,17 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.name or self.email} - {self.role}"
 
+    def save(self, *args, **kwargs):
+        changed = self.ensure_trial_window()
+
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            if changed:
+                update_fields.update(["trial_starts_at", "trial_ends_at"])
+            kwargs["update_fields"] = list(update_fields)
+
+        super().save(*args, **kwargs)
 
 # ======================
 # Store + StoreSettings

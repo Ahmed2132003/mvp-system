@@ -11,11 +11,33 @@ class IsSuperUser(permissions.BasePermission):
         )
 
 
+class HasActiveSubscription(permissions.BasePermission):
+    """
+    يمنع أصحاب ومديري الحسابات من استخدام النظام بعد انتهاء التجربة المجانية
+    ما لم يتم توثيق الدفع.
+    """
+    message = "انتهت الفترة التجريبية الخاصة بحسابك. برجاء التواصل مع الشركة للترقية وتفعيل الحساب."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        # السوبر يوزر خارج القيود
+        if getattr(user, "is_superuser", False):
+            return True
+
+        try:
+            return getattr(user, "has_active_access", True)
+        except Exception:
+            return True
+
+
 class IsOwner(permissions.BasePermission):
     def has_permission(self, request, view):
         return (
             request.user.is_authenticated and
-            getattr(request.user, 'role', None) == 'OWNER'
+            getattr(request.user, 'role', None) == 'OWNER'            
         )
 
 

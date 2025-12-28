@@ -6,17 +6,18 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
     TokenRefreshView,
     TokenVerifyView,
 )
 
 # استيراد LogoutView من core
 from core.views import LogoutView
+from core.auth_views import SubscriptionTokenObtainPairView
 from attendance import views as attendance_views
 
 # استيراد كل الـ ViewSets عشان الـ router
 from core.views import EmployeeViewSet
+from core.admin_api import AdminUserViewSet
 from stores.views import StoreViewSet, StoreSettingsViewSet
 from branches.views import BranchViewSet
 from inventory.views import CategoryViewSet, ItemViewSet, InventoryViewSet
@@ -45,13 +46,13 @@ router.register(r'orders', OrderViewSet, basename='order')
 router.register(r'loyalty/program', LoyaltyProgramViewSet, basename='loyalty-program')
 router.register(r'loyalty/customers', CustomerLoyaltyViewSet, basename='loyalty-customers')
 router.register(r'loyalty/transactions', LoyaltyTransactionViewSet, basename='loyalty-transactions')
-
+router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 # الـ URLs الرئيسية
 urlpatterns = [
     path('admin/', admin.site.urls),
 
     # JWT Authentication
-    path('api/v1/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/v1/auth/login/', SubscriptionTokenObtainPairView.as_view(), name='token_obtain_pair'),    
     path('api/v1/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/v1/auth/verify/', TokenVerifyView.as_view(), name='token_verify'),
     path('api/v1/auth/logout/', LogoutView.as_view(), name='auth_logout'),

@@ -51,6 +51,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.middleware.SubscriptionEnforcementMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -181,4 +182,4 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'creativitycode78@gmail.com'
 EMAIL_HOST_PASSWORD = 'odxj slcp lkoc wauf'  
-DEFAULT_FROM_EMAIL = 'MVP POS <creativitycode78@gmail.com>'
+DEFAULT_FROM_EMAIL = 'NIBAR CLOUD SYSTEM <creativitycode78@gmail.com>'

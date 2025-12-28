@@ -27,6 +27,7 @@ import Employees from './pages/Employees.jsx';
 import Accounting from './pages/Accounting.jsx';
 import Unauthorized from './pages/Unauthorized.jsx';
 import HomeRedirect from './pages/HomeRedirect.jsx';
+import AdminAccounts from './pages/AdminAccounts.jsx';
 
 if (window.location.pathname.startsWith('/admin')) {
   window.location.href = 'http://127.0.0.1:8000/admin/';
@@ -148,6 +149,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <AdminCreateStore />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/accounts"
+              element={
+                <ProtectedRoute superuserOnly>
+                  <AdminAccounts />
                 </ProtectedRoute>
               }
             />

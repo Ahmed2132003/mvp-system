@@ -495,17 +495,26 @@ export default function Dashboard() {
             </div>
 
             <div className="flex items-center gap-3">
-              {/* ✅ زر إضافة ستور - يظهر للسوبر يوزر فقط */}
+              {/* ✅ أزرار السوبر يوزر */}
               {me?.is_superuser && (
-                <Link
-                  to="/admin/stores/create"
-                  className="inline-flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition"
-                >
-                  <span>➕</span>
-                  <span>{isAr ? 'إضافة ستور' : 'Add Store'}</span>
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    to="/admin/accounts"
+                    className="inline-flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition"
+                  >
+                    <span>🗂️</span>
+                    <span>{isAr ? 'كامل معلومات الحسابات' : 'Accounts Control'}</span>
+                  </Link>
+                  <Link
+                    to="/admin/stores/create"
+                    className="inline-flex items-center gap-2 text-sm font-semibold px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                  >
+                    <span>➕</span>
+                    <span>{isAr ? 'إضافة ستور' : 'Add Store'}</span>
+                  </Link>
+                </div>
               )}
-
+              
               {/* Filters */}
               <select className="hidden sm:block text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100">
                 <option>{isAr ? 'اليوم' : 'Today'}</option>
