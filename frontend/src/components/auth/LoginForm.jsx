@@ -1,6 +1,7 @@
 // src/components/auth/LoginForm.jsx
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function LoginForm() {
@@ -94,9 +95,12 @@ export default function LoginForm() {
       </form>
 
       <div className="mt-6 text-center">
-        <a href="#" className="text-sm text-primary hover:underline font-medium">
+        <Link
+          to="/forgot-password"
+          className="text-sm text-primary hover:underline font-medium"
+        >
           نسيت كلمة المرور؟
-        </a>
+        </Link>
       </div>
     </div>
   );

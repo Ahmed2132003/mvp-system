@@ -11,9 +11,10 @@ urlpatterns = [
     # Auth
     path('auth/me/', views.me_view),
     path('auth/verify-link/<uuid:token>/', views.verify_magic_link, name='verify-magic-link'),
+    path("auth/forgot-password/", views.forgot_password_request, name="forgot-password"),
+    path("auth/reset-password/", views.reset_password_confirm, name="reset-password"),
 
     path('logout/', views.LogoutView.as_view()),
-
     # Users
     path('users/', views.list_users),
     path('users/create/', views.create_user_account),

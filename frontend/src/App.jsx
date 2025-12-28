@@ -11,6 +11,8 @@ import Dashboard from './pages/Dashboard';
 import CreateUser from './pages/CreateUser';   
 import POS from './pages/POS'; 
 import CustomerMenu from './pages/CustomerMenu';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 // src/App.jsx
 import KDS from './pages/KDS';
 import InventoryPage from './pages/Inventory.jsx';
@@ -42,6 +44,8 @@ function App() {
             <Route path="/table/:tableId/menu" element={<CustomerMenu />} />
             <Route path="/store/:storeId/menu" element={<StoreMenu />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             <Route
               path="/"

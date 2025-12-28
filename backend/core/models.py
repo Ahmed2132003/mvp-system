@@ -65,7 +65,11 @@ class User(AbstractUser):
     # Magic Link Fields
     verification_token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, null=True, blank=True)
     verification_token_expires_at = models.DateTimeField(null=True, blank=True)
-    
+
+    # Password reset via magic link
+    reset_password_token = models.UUIDField(unique=True, null=True, blank=True)
+    reset_password_token_expires_at = models.DateTimeField(null=True, blank=True)
+        
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
@@ -142,7 +146,7 @@ class User(AbstractUser):
         self.verification_token = uuid.uuid4()
         self.verification_token_expires_at = timezone.now() + timezone.timedelta(minutes=15)
         self.save(update_fields=["verification_token", "verification_token_expires_at"])
-
+        
         verification_url = f"{settings.SITE_URL}/api/v1/auth/verify-link/{self.verification_token}/"
 
         subject = "تفعيل حسابك في MVP POS"
@@ -171,6 +175,42 @@ class User(AbstractUser):
         )
         return True
 
+    def send_password_reset_link(self):
+        if not self.email:
+            return False
+
+        self.reset_password_token = uuid.uuid4()
+        self.reset_password_token_expires_at = timezone.now() + timezone.timedelta(minutes=30)
+        self.save(update_fields=["reset_password_token", "reset_password_token_expires_at"])
+
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={self.reset_password_token}"
+
+        subject = "إعادة تعيين كلمة المرور - MVP POS"
+        message = f"""
+مرحبًا {self.name or 'العميل'},
+
+تم استلام طلب لإعادة تعيين كلمة المرور الخاصة بحسابك.
+
+اضغط على الرابط التالي لإنشاء كلمة مرور جديدة:
+
+{reset_url}
+
+الرابط صالح لمدة 30 دقيقة فقط.
+
+لو لم تطلب إعادة التعيين، تجاهل هذه الرسالة وسيظل حسابك آمنًا.
+
+فريق MVP POS
+"""
+
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [self.email],
+            fail_silently=False,
+        )
+        return True
+    
     def __str__(self):
         return f"{self.name or self.email} - {self.role}"
 

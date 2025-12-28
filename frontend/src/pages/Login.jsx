@@ -28,8 +28,12 @@ export default function Login() {
         'عذرًا، الرابط منتهي الصلاحية أو غير صحيح. اطلب من المدير يرسل لك رابط تفعيل جديد.'
       );
     }
-  }, [location]);
 
+    if (params.get('reset') === 'success') {
+      notifySuccess('تم تعيين كلمة المرور الجديدة بنجاح، سجّل دخولك الآن.');
+    }
+  }, [location]);
+  
   const searchParams = new URLSearchParams(location.search);
   const isVerified = searchParams.get('verified') === 'true';
   const hasInvalidLink = searchParams.get('error') === 'invalid_or_expired_link';

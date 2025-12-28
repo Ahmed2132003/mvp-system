@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny, SAFE_METHODS
+from django.contrib.auth.password_validation import validate_password
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.conf import settings
@@ -224,7 +225,6 @@ def verify_magic_link(request, token):
             verification_token_expires_at__gt=timezone.now(),
             is_active=False
         )
-
         user.is_active = True
         user.verification_token = None
         user.verification_token_expires_at = None
@@ -236,10 +236,61 @@ def verify_magic_link(request, token):
         return redirect(f"{settings.FRONTEND_URL}/login?error=invalid_or_expired_link")
 
 
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def forgot_password_request(request):
+    email = request.data.get("email")
+    if not email:
+        return Response({"detail": "البريد الإلكتروني مطلوب"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(email__iexact=email, is_active=True)
+    except User.DoesNotExist:
+        # إرجاع نفس الرسالة لتجنب كشف وجود الحساب من عدمه
+        return Response({"message": "لو الحساب موجود تم إرسال رابط إعادة التعيين على الإيميل."})
+
+    user.send_password_reset_link()
+    return Response({"message": "تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني."})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def reset_password_confirm(request):
+    token = request.data.get("token")
+    password = request.data.get("password")
+    password_confirm = request.data.get("password_confirm")
+
+    if not token or not password:
+        return Response({"detail": "البيانات غير مكتملة"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if password != password_confirm:
+        return Response({"detail": "كلمتا المرور غير متطابقتين."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(
+            reset_password_token=token,
+            reset_password_token_expires_at__gt=timezone.now(),
+            is_active=True,
+        )
+    except User.DoesNotExist:
+        return Response({"detail": "الرابط غير صالح أو منتهي."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        validate_password(password, user)
+    except Exception as exc:  # pragma: no cover - يعتمد على قواعد التحقق
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.set_password(password)
+    user.reset_password_token = None
+    user.reset_password_token_expires_at = None
+    user.save(update_fields=["password", "reset_password_token", "reset_password_token_expires_at"])
+
+    return Response({"message": "تم تعيين كلمة المرور الجديدة بنجاح."})
+
+
 # =========================
 # Helpers
 # =========================
-
 def get_user_store(user):
     emp = getattr(user, "employee", None)
     if emp and getattr(emp, "store", None):
