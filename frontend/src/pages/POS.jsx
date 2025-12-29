@@ -11,7 +11,7 @@ import api from '../lib/api';
 import { useStore } from '../hooks/useStore';
 import { useAuth } from '../hooks/useAuth';
 import { notifyInfo, notifySuccess } from '../lib/notifications';
-
+import { openInvoicePrintWindow } from '../lib/invoice';
 
 const ORDER_TYPES = {
   DINE_IN: 'DINE_IN',
@@ -45,7 +45,7 @@ export default function POS() {
   const [statusError, setStatusError] = useState(null);
   const [kdsWsConnected, setKdsWsConnected] = useState(false);
   const kdsWsRef = useRef(null);
-  const audioContextRef = useRef(null);
+  const audioContextRef = useRef(null);  
   const liveOrderStatusesRef = useRef({});
   const hasAnnouncedKitchenRef = useRef(false);
 
@@ -71,7 +71,7 @@ export default function POS() {
 
   const [newItemModalOpen, setNewItemModalOpen] = useState(false);
   const [creatingItem, setCreatingItem] = useState(false);
-  const [createItemError, setCreateItemError] = useState(null);
+  const [createItemError, setCreateItemError] = useState(null);  
   const [newItemForm, setNewItemForm] = useState({
     name: '',
     category: '',
@@ -91,7 +91,11 @@ export default function POS() {
     () => localStorage.getItem('lang') || 'en'
   );
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [activeInvoice, setActiveInvoice] = useState(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceError, setInvoiceError] = useState(null);
+  const [lastOrderId, setLastOrderId] = useState(null);
   const isAr = lang === 'ar';
 
   // طبّق الثيم على <html>
@@ -606,7 +610,7 @@ export default function POS() {
     const isDelivery = orderType === ORDER_TYPES.DELIVERY;
 
     return {
-      customer_name: customerName || null,
+      customer_name: customerName || null,      
       customer_phone: customerPhone || null,
       delivery_address: isDelivery ? deliveryAddress : null,
       order_type: isDelivery ? 'DELIVERY' : 'IN_STORE',
@@ -620,12 +624,50 @@ export default function POS() {
     };
   };
 
+  const fetchInvoiceForOrder = useCallback(
+    async (orderId) => {
+      if (!orderId) return null;
+      try {
+        setInvoiceLoading(true);
+        setInvoiceError(null);
+        const res = await api.post(
+          '/orders/invoices/for-order/',
+          { order_id: orderId },
+          {
+            params: {
+              store_id: selectedStoreId,
+              branch: selectedBranchId ? Number(selectedBranchId) : undefined,
+            },
+          }
+        );
+        setActiveInvoice(res.data);
+        return res.data;
+      } catch (err) {
+        console.error('Error fetching invoice:', err);
+        const msg =
+          err.response?.data?.detail ||
+          (isAr
+            ? 'تعذر تحميل الفاتورة. تأكد من الاتصال وجرب مرة أخرى.'
+            : 'Unable to load invoice. Please try again.');
+        setInvoiceError(msg);
+        return null;
+      } finally {
+        setInvoiceLoading(false);
+      }
+    },
+    [isAr, selectedBranchId, selectedStoreId]
+  );
+
   const submitOrder = async (payNow = false) => {
+    setActiveInvoice(null);
+    setInvoiceError(null);
+    setInvoiceModalOpen(false);
+
     if (cart.length === 0) {
       const msg = isAr
         ? 'لا يمكن حفظ طلب بدون أصناف.'
         : 'Cannot save an order without items.';        
-      setStatusError(msg);
+      setStatusError(msg);      
       setStatusMessage(null);
       showToast(msg, 'error');
       return;
@@ -677,10 +719,11 @@ export default function POS() {
         },
       });
       const order = res.data;
+      setLastOrderId(order?.id || null);
 
       if (payNow && order?.id) {
         await api.patch(
-          `/orders/${order.id}/`,
+          `/orders/${order.id}/`,          
           { status: 'PAID' },
           {
             params: {
@@ -699,9 +742,14 @@ export default function POS() {
         ? `تم حفظ الطلب #${order.id} كمسودة (PENDING).`
         : `Order #${order.id} saved as draft (PENDING).`;
 
+      const invoice = await fetchInvoiceForOrder(order.id);
+      if (invoice) {
+        setInvoiceModalOpen(true);
+      }
+
       setStatusMessage(msg);
       showToast(msg, 'success');
-      handleClearCart();
+      handleClearCart();      
     } catch (err) {
       console.error('Error saving order:', err);
       const msg =
@@ -781,8 +829,20 @@ export default function POS() {
         <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-50">
           {isAr ? 'ملخص الطلب' : 'Order summary'}
         </h2>
+        <div className="flex items-center justify-between mt-1">
+          <Link
+            to="/invoices"
+            className="text-[11px] text-blue-600 hover:text-blue-700 underline underline-offset-2 dark:text-blue-300"
+          >
+            {isAr ? 'مراجعة الفواتير' : 'Review invoices'}
+          </Link>
+          {activeInvoice?.invoice_number && (
+            <span className="text-[11px] text-emerald-700 dark:text-emerald-200">
+              {isAr ? 'آخر فاتورة:' : 'Last invoice:'} {activeInvoice.invoice_number}
+            </span>
+          )}
+        </div>
         {renderOrderTypeButtons()}
-
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div>
             <label className="block text-[11px] text-gray-600 mb-1 dark:text-gray-300">
@@ -986,7 +1046,7 @@ export default function POS() {
           <button
             type="button"
             disabled={saving || cart.length === 0}
-            onClick={() => submitOrder(false)}
+            onClick={() => submitOrder(false)}            
             className="flex-1 py-2 rounded-2xl text-xs font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
           >
             {isAr ? 'حفظ كمسودة' : 'Save as draft'}
@@ -1003,9 +1063,26 @@ export default function POS() {
 
         <button
           type="button"
+          disabled={invoiceLoading || !lastOrderId}
+          onClick={async () => {
+            const invoice =
+              activeInvoice || (await fetchInvoiceForOrder(lastOrderId));
+            if (invoice) {
+              setActiveInvoice(invoice);
+              setInvoiceModalOpen(true);
+              openInvoicePrintWindow(invoice, isAr);
+            }
+          }}
+          className="w-full mt-1 py-2 rounded-2xl text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 disabled:opacity-50 dark:bg-blue-950/30 dark:text-blue-200 dark:border-blue-800"
+        >
+          {isAr ? 'طباعة الفاتورة' : 'Print invoice'}
+        </button>
+
+        <button
+          type="button"
           onClick={handleClearCart}
           disabled={saving || cart.length === 0}
-          className="w-full mt-1 py-2 rounded-2xl text-[11px] font-medium border border-red-100 text-red-500 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-900/40"
+          className="w-full mt-1 py-2 rounded-2xl text-[11px] font-medium border border-red-100 text-red-500 hover:bg-red-50 disabled:opacity-40 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-900/40"          
         >
           {isAr ? 'إلغاء الطلب الحالي' : 'Cancel current order'}
         </button>
@@ -1019,6 +1096,12 @@ export default function POS() {
         {statusError && (
           <div className="mt-2 text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-2xl px-3 py-2 dark:bg-red-900/20 dark:border-red-700 dark:text-red-200">
             {statusError}
+          </div>
+        )}
+
+        {invoiceError && (
+          <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-2xl px-3 py-2 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-100">
+            {invoiceError}
           </div>
         )}
       </div>
@@ -1503,10 +1586,146 @@ export default function POS() {
         </main>
       </div>
 
+      {invoiceModalOpen && activeInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800 p-5">
+            <div className="flex items-start justify-between gap-2 mb-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
+                  {isAr ? 'مراجعة الفاتورة' : 'Invoice preview'}
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {isAr ? 'رقم الفاتورة' : 'Invoice number'}:{' '}
+                  <span className="font-semibold text-blue-700 dark:text-blue-300">
+                    {activeInvoice.invoice_number}
+                  </span>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInvoiceModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-700 dark:text-gray-200">
+              <div className="space-y-1">
+                <p>
+                  {isAr ? 'المتجر:' : 'Store:'}{' '}
+                  <span className="font-semibold">{activeInvoice.store_name}</span>
+                </p>
+                {activeInvoice.branch_name && (
+                  <p>
+                    {isAr ? 'الفرع:' : 'Branch:'}{' '}
+                    <span className="font-semibold">{activeInvoice.branch_name}</span>
+                  </p>
+                )}
+                {activeInvoice.table_number && (
+                  <p>
+                    {isAr ? 'الطاولة:' : 'Table:'}{' '}
+                    <span className="font-semibold">{activeInvoice.table_number}</span>
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <p>
+                  {isAr ? 'نوع الطلب:' : 'Order type:'}{' '}
+                  <span className="font-semibold">
+                    {activeInvoice.order_type === 'DELIVERY'
+                      ? isAr
+                        ? 'دليفري'
+                        : 'Delivery'
+                      : isAr
+                      ? 'داخل المحل'
+                      : 'In store'}
+                  </span>
+                </p>
+                {activeInvoice.customer_name && (
+                  <p>
+                    {isAr ? 'العميل:' : 'Customer:'}{' '}
+                    <span className="font-semibold">{activeInvoice.customer_name}</span>
+                  </p>
+                )}
+                {activeInvoice.customer_phone && (
+                  <p>
+                    {isAr ? 'الهاتف:' : 'Phone:'}{' '}
+                    <span className="font-semibold">{activeInvoice.customer_phone}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {activeInvoice.delivery_address && (
+              <div className="mt-2 text-xs text-gray-700 dark:text-gray-200">
+                <span className="font-semibold">{isAr ? 'عنوان التوصيل:' : 'Delivery address:'} </span>
+                {activeInvoice.delivery_address}
+              </div>
+            )}
+
+            {activeInvoice.notes && (
+              <div className="mt-1 text-xs text-gray-700 dark:text-gray-200">
+                <span className="font-semibold">{isAr ? 'ملاحظات:' : 'Notes:'} </span>
+                {activeInvoice.notes}
+              </div>
+            )}
+
+            <div className="mt-3 border border-gray-100 dark:border-slate-800 rounded-2xl overflow-hidden">
+              <table className="w-full text-[11px]">
+                <thead className="bg-gray-50 dark:bg-slate-800">
+                  <tr>
+                    <th className="py-2 px-2 text-right">{isAr ? 'الصنف' : 'Item'}</th>
+                    <th className="py-2 px-2 text-center">{isAr ? 'الكمية' : 'Qty'}</th>
+                    <th className="py-2 px-2 text-left">{isAr ? 'الإجمالي' : 'Total'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(activeInvoice.items || []).map((row) => (
+                    <tr key={row.id} className="border-t border-gray-100 dark:border-slate-800">
+                      <td className="py-1.5 px-2 text-right">{row.item_name}</td>
+                      <td className="py-1.5 px-2 text-center">{row.quantity}</td>
+                      <td className="py-1.5 px-2 text-left">
+                        {row.subtotal?.toLocaleString(isAr ? 'ar-EG' : 'en-US')} {isAr ? 'ج.م' : 'EGP'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between mt-3 text-sm font-semibold text-gray-900 dark:text-gray-50">
+              <span>{isAr ? 'الإجمالي المستحق' : 'Amount due'}</span>
+              <span>
+                {Number(activeInvoice.total || 0).toLocaleString(isAr ? 'ar-EG' : 'en-US')}{' '}
+                {isAr ? 'ج.م' : 'EGP'}
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => openInvoicePrintWindow(activeInvoice, isAr)}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700"
+              >
+                {isAr ? 'طباعة / حفظ' : 'Print or save'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setInvoiceModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
+              >
+                {isAr ? 'إغلاق' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {newItemModalOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4 py-6">
           <div className="w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-800 p-5">
-            <div className="flex items-start justify-between gap-2 mb-3">
+            <div className="flex items-start justify-between gap-2 mb-3">              
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
                   {isAr ? 'إضافة صنف جديد' : 'Add a new item'}

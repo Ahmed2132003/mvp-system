@@ -2,8 +2,7 @@
 
 import django_filters
 from django_filters import CharFilter, DateTimeFilter, ChoiceFilter
-from .models import Order, Table, Reservation
-
+from .models import Order, Table, Reservation, Invoice
 
 class OrderFilter(django_filters.FilterSet):
     status = ChoiceFilter(choices=Order.STATUS_CHOICES)
@@ -41,3 +40,13 @@ class ReservationFilter(django_filters.FilterSet):
     class Meta:
         model = Reservation
         fields = ['status', 'table', 'customer_name']
+
+
+class InvoiceFilter(django_filters.FilterSet):
+    invoice_number = CharFilter(lookup_expr='icontains')
+    branch = django_filters.NumberFilter()
+    order_type = ChoiceFilter(choices=Order.ORDER_TYPE_CHOICES)
+
+    class Meta:
+        model = Invoice
+        fields = ['invoice_number', 'branch', 'order_type']

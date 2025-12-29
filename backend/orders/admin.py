@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import Table, Order, OrderItem, Payment, Reservation
+from .models import Table, Order, OrderItem, Payment, Reservation, Invoice
 
 
 # =======================
@@ -115,4 +115,18 @@ class PaymentAdmin(admin.ModelAdmin):
     list_filter = ('gateway', 'status', 'created_at')
     search_fields = ('order__id', 'transaction_id')
     date_hierarchy = 'created_at'
+    readonly_fields = ('created_at',)
+
+@admin.register(Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
+    list_display = (
+        'invoice_number',
+        'order',
+        'store',
+        'branch',
+        'total',
+        'created_at',
+    )
+    search_fields = ('invoice_number', 'customer_name', 'customer_phone')
+    list_filter = ('store', 'branch', 'order_type', 'created_at')
     readonly_fields = ('created_at',)

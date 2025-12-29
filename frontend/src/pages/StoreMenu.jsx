@@ -9,6 +9,7 @@ import React, {
 import { useParams } from 'react-router-dom';
 import api from '../lib/api';
 import { notifySuccess, notifyError } from '../lib/notifications';
+import { openInvoicePrintWindow } from '../lib/invoice';
 
 export default function StoreMenu() {
   const { storeId } = useParams();
@@ -88,8 +89,10 @@ export default function StoreMenu() {
 
   const [submitting, setSubmitting] = useState(false);
   const [successOrder, setSuccessOrder] = useState(null);
+  const [invoiceDetails, setInvoiceDetails] = useState(null);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [liveStatus, setLiveStatus] = useState(null);
-  const [activeOrderId, setActiveOrderId] = useState(null);
+  const [activeOrderId, setActiveOrderId] = useState(null);  
   const wsRef = useRef(null);
   const lastAnnouncedStatusRef = useRef(null);
 
@@ -334,13 +337,38 @@ export default function StoreMenu() {
   );
   const total = subtotal;
 
+  const loadInvoice = useCallback(
+    async (invoiceNumber) => {
+      if (!invoiceNumber) return null;
+      try {
+        setInvoiceLoading(true);
+        const res = await api.get(`/orders/public/invoices/${invoiceNumber}/`);
+        setInvoiceDetails(res.data);
+        return res.data;
+      } catch (err) {
+        console.error('خطأ في تحميل الفاتورة:', err);
+        notifyError(
+          isAr
+            ? 'تعذر تحميل الفاتورة. حاول مرة أخرى.'
+            : 'Could not load invoice. Please try again.'
+        );
+        return null;
+      } finally {
+        setInvoiceLoading(false);
+      }
+    },
+    [isAr]
+  );
+
   // ============ إرسال الطلب ============
   const handleSubmitOrder = async () => {
+    setInvoiceDetails(null);
+
     if (cart.length === 0) {
       notifyError(
         isAr
           ? 'السلة فارغة، أضف منتج واحد على الأقل قبل الإرسال.'
-          : 'Your cart is empty. Please add at least one item before sending the order.'
+          : 'Your cart is empty. Please add at least one item before sending the order.'          
       );
       return;
     }
@@ -387,11 +415,14 @@ export default function StoreMenu() {
       setActiveOrderId(res.data.id);
       setLiveStatus(res.data.status);
       lastAnnouncedStatusRef.current = res.data.status;
+      if (res.data.invoice_number) {
+        await loadInvoice(res.data.invoice_number);
+      }
       handleClearCart(true);
 
       notifySuccess(
         isAr
-          ? `تم إرسال الطلب بنجاح! رقم الطلب #${res.data.id}`
+          ? `تم إرسال الطلب بنجاح! رقم الطلب #${res.data.id}`          
           : `Order sent successfully! Order #${res.data.id}`
       );
 
@@ -1044,27 +1075,49 @@ export default function StoreMenu() {
                 <p className="font-semibold">
                   {isAr ? 'تم استلام طلبك بنجاح 🎉' : 'Your order has been received 🎉'}
                 </p>
-                {currentStatus && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/70 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-100">
-                    {formatStatusLabel(currentStatus)}
-                  </span>
-                )}
-              </div>
-              <p>{isAr ? 'رقم الطلب' : 'Order number'}: #{successOrder.id}</p>
-              {selectedBranch && (
-                <p className="text-[11px] text-emerald-700/80 dark:text-emerald-100/80">
-                  {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
-                </p>
+              {currentStatus && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-white/70 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-100">
+                  {formatStatusLabel(currentStatus)}
+                </span>
               )}
+            </div>
+            <p>{isAr ? 'رقم الطلب' : 'Order number'}: #{successOrder.id}</p>
+            {selectedBranch && (
+              <p className="text-[11px] text-emerald-700/80 dark:text-emerald-100/80">
+                {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
+              </p>
+            )}
+            {successOrder?.invoice_number && (
               <p>
-                {isAr ? 'الإجمالي: ' : 'Total: '}
-                {numberFormatter.format(Number(successOrder.total || 0))} {isAr ? 'ج.م' : 'EGP'}
+                {isAr ? 'رقم الفاتورة: ' : 'Invoice: '}
+                {successOrder.invoice_number}
               </p>
-              <p className="text-xs mt-2 text-emerald-700/80 dark:text-emerald-100/80">
-                {isAr
-                  ? 'نقوم بتحديث الحالة تلقائيًا، وسنرسل لك تنبيهًا صوتيًا عند جاهزية الطلب.'
-                  : 'Status updates arrive automatically with voice alerts when ready.'}
+            )}
+            <p>
+              {isAr ? 'الإجمالي: ' : 'Total: '}
+              {numberFormatter.format(Number(successOrder.total || 0))} {isAr ? 'ج.م' : 'EGP'}
+            </p>
+            {invoiceLoading && (
+              <p className="text-[11px] text-gray-500 dark:text-gray-300">
+                {isAr ? 'جارِ تجهيز الفاتورة...' : 'Preparing your invoice...'}
               </p>
+            )}
+            {invoiceDetails && (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => openInvoicePrintWindow(invoiceDetails, isAr)}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-blue-100 text-blue-700 text-[11px] hover:bg-blue-100 dark:bg-slate-900 dark:border-blue-800 dark:text-blue-200"
+                >
+                  {isAr ? 'حفظ/طباعة الفاتورة' : 'Save / Print invoice'}
+                </button>
+              </div>
+            )}
+            <p className="text-xs mt-2 text-emerald-700/80 dark:text-emerald-100/80">
+              {isAr
+                ? 'نقوم بتحديث الحالة تلقائيًا، وسنرسل لك تنبيهًا صوتيًا عند جاهزية الطلب.'
+                : 'Status updates arrive automatically with voice alerts when ready.'}
+            </p>              
             </section>
           )}
         </div>

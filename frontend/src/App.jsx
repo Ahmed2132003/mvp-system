@@ -30,6 +30,7 @@ import Accounting from './pages/Accounting.jsx';
 import Unauthorized from './pages/Unauthorized.jsx';
 import HomeRedirect from './pages/HomeRedirect.jsx';
 import AdminAccounts from './pages/AdminAccounts.jsx';
+import Invoices from './pages/Invoices.jsx';
 
 if (window.location.pathname.startsWith('/admin')) {
   window.location.href = 'http://127.0.0.1:8000/admin/';
@@ -87,6 +88,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <KDS />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/invoices"
+              element={
+                <ProtectedRoute>
+                  <Invoices />
                 </ProtectedRoute>
               }
             />

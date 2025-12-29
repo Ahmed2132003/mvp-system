@@ -18,9 +18,9 @@ from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-from .models import Table, Order, Reservation, OrderItem
-from .serializers import TableSerializer, OrderSerializer, ReservationSerializer
-from .filters import OrderFilter
+from .models import Table, Order, Reservation, OrderItem, Invoice
+from .serializers import TableSerializer, OrderSerializer, ReservationSerializer, InvoiceSerializer
+from .filters import OrderFilter, InvoiceFilter
 from core.permissions import IsEmployeeOfStore, IsManager
 from inventory.models import Item
 from core.models import Store
@@ -29,6 +29,7 @@ from branches.models import Branch
 # ✅ NEW: store switcher context
 from core.utils.store_context import get_store_from_request, get_branch_from_request
 from django.db.models import Sum
+from .services.invoice import ensure_invoice_for_order
 
 # =======================
 # Helpers
@@ -206,7 +207,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             if not branch:
                 raise ValidationError({"detail": "لا يوجد فرع مرتبط بهذا الحساب."})
 
-            serializer.save(store=store, branch=branch)
+            order = serializer.save(store=store, branch=branch)
+            ensure_invoice_for_order(order)
             
     @action(detail=False, methods=["get"], url_path="kds")
     def kds_orders(self, request):
@@ -217,6 +219,54 @@ class OrderViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(qs, many=True)
         return Response(serializer.data)
 
+
+class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = InvoiceSerializer
+    permission_classes = [IsEmployeeOfStore]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = InvoiceFilter
+    search_fields = ["invoice_number", "customer_name", "customer_phone"]
+    ordering_fields = ["created_at", "total"]
+    ordering = ["-created_at"]
+    lookup_field = "invoice_number"
+
+    def get_queryset(self):
+        store = get_store_from_request(self.request)
+        if not store:
+            return Invoice.objects.none()
+
+        qs = Invoice.objects.filter(store=store).select_related(
+            "branch", "store", "order__table"
+        ).prefetch_related("order__items__item")
+
+        branch = get_branch_from_request(
+            self.request, store=store, allow_store_default=False
+        )
+        if branch:
+            qs = qs.filter(branch=branch)
+        return qs
+
+    @action(detail=False, methods=["post"], url_path="for-order")
+    def for_order(self, request):
+        store = get_store_from_request(request)
+        if not store:
+            return Response(
+                {"detail": "لا يوجد متجر مرتبط بهذا الحساب."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order_id = request.data.get("order_id")
+        if not order_id:
+            return Response(
+                {"detail": "رقم الطلب مطلوب لإنشاء الفاتورة."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        order = get_object_or_404(Order, pk=order_id, store=store)
+        invoice = ensure_invoice_for_order(order)
+        serializer = self.get_serializer(invoice)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
 # =======================
 # ReservationViewSet
 # =======================
@@ -329,12 +379,30 @@ def _build_availability_map(qs, reservation_time=None, duration=60):
     available_ids = set(available_qs.values_list("id", flat=True))
     return {table.id: table.id in available_ids for table in qs_list}
 
+
+class PublicInvoiceDetailView(APIView):
+    """
+    إرجاع تفاصيل الفاتورة باستخدام رقم الفاتورة (بدون تسجيل دخول)
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, invoice_number):
+        invoice = get_object_or_404(
+            Invoice.objects.select_related(
+                "store", "branch", "order__table"
+            ).prefetch_related("order__items__item"),
+            invoice_number=invoice_number,
+        )
+        serializer = InvoiceSerializer(invoice)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 class PublicTableMenuView(APIView):
     """
     يرجع بيانات الفرع + الطاولة + قائمة الأصناف للعميل (QR menu)
     """
-    permission_classes = [AllowAny]
-    
+    permission_classes = [AllowAny]    
     def get(self, request, table_id):
         table = get_object_or_404(
             Table.objects.select_related("store"),
@@ -464,6 +532,7 @@ class PublicTableOrderCreateView(APIView):
                 )
 
             order.update_total()
+            ensure_invoice_for_order(order)
 
         serializer = OrderSerializer(order)
         return Response(serializer.data, status=status.HTTP_201_CREATED)

@@ -5,6 +5,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     TableViewSet,
     OrderViewSet,
+    InvoiceViewSet,
     ReservationViewSet,
     PublicTableMenuView,
     PublicTableOrderCreateView,
@@ -12,27 +13,32 @@ from .views import (
     PublicStoreOrderCreateView,
     PublicStoreTablesView,
     PublicReservationCreateView,
+    PublicInvoiceDetailView,
 )
 
 router = DefaultRouter()
 
 router.register(r"tables", TableViewSet, basename="table")
 router.register(r"reservations", ReservationViewSet, basename="reservation")
+router.register(r"invoices", InvoiceViewSet, basename="invoice")
 router.register(r"", OrderViewSet, basename="order")
 
 urlpatterns = [
     # ✅ أولاً: public endpoints (عشان مافيش أي احتمالات routing غريبة)
-    path(
-        "public/table/<int:table_id>/menu/",
+    path(        
         PublicTableMenuView.as_view(),
         name="public-table-menu",
+    ),
+    path(
+        "public/invoices/<str:invoice_number>/",
+        PublicInvoiceDetailView.as_view(),
+        name="public-invoice-detail",
     ),
     path(
         "public/table/<int:table_id>/order/",
         PublicTableOrderCreateView.as_view(),
         name="public-table-order",
     ),
-
     path(
         "public/store/<int:store_id>/menu/",
         PublicStoreMenuView.as_view(),

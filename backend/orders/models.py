@@ -255,7 +255,27 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment {self.transaction_id or ''} - {self.amount} EGP" 
-    
+
+
+class Invoice(models.Model):
+    order = models.OneToOneField('Order', on_delete=models.CASCADE, related_name='invoice')
+    store = models.ForeignKey('core.Store', on_delete=models.CASCADE, related_name='invoices')
+    branch = models.ForeignKey('branches.Branch', on_delete=models.SET_NULL, null=True, blank=True, related_name='invoices')
+    invoice_number = models.CharField(max_length=64, unique=True)
+    customer_name = models.CharField(max_length=255, blank=True, null=True)
+    customer_phone = models.CharField(max_length=20, blank=True, null=True)
+    order_type = models.CharField(max_length=20, choices=Order.ORDER_TYPE_CHOICES)
+    delivery_address = models.TextField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Invoice {self.invoice_number}"
+        
 class Reservation(models.Model):
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
@@ -379,3 +399,16 @@ def notify_kds_on_order_change(sender, instance: Order, created, **kwargs):
 
     # حالياً جروب واحد لكل السيستم (MVP)
     async_to_sync(channel_layer.group_send)("kds", payload)
+
+
+@receiver(post_save, sender=Order)
+def ensure_invoice_exists(sender, instance: Order, **kwargs):
+    """
+    تأكد من إنشاء فاتورة لكل طلب وتحديث بياناتها الأساسية.
+    """
+    try:
+        from .services.invoice import ensure_invoice_for_order
+    except Exception:
+        return
+
+    ensure_invoice_for_order(instance)
