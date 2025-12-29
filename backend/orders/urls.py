@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     TableViewSet,
-    OrderViewSet,
+    OrderViewSet,    
     InvoiceViewSet,
     ReservationViewSet,
     PublicTableMenuView,
@@ -23,40 +23,46 @@ router.register(r"reservations", ReservationViewSet, basename="reservation")
 router.register(r"invoices", InvoiceViewSet, basename="invoice")
 router.register(r"", OrderViewSet, basename="order")
 
-urlpatterns = [
+app_name = "orders"
+
+public_urlpatterns = [
     # ✅ أولاً: public endpoints (عشان مافيش أي احتمالات routing غريبة)
-    path("public/table/<int:table_id>/menu/", PublicTableMenuView.as_view(), name="public-table-menu"),    
+    path(
+        "public/table/<int:table_id>/menu/",
+        view=PublicTableMenuView.as_view(),
+        name="public-table-menu",
+    ),
     path(
         "public/invoices/<str:invoice_number>/",
-        PublicInvoiceDetailView.as_view(),
+        view=PublicInvoiceDetailView.as_view(),
         name="public-invoice-detail",
     ),
     path(
         "public/table/<int:table_id>/order/",
-        PublicTableOrderCreateView.as_view(),
+        view=PublicTableOrderCreateView.as_view(),
         name="public-table-order",
     ),
     path(
         "public/store/<int:store_id>/menu/",
-        PublicStoreMenuView.as_view(),
+        view=PublicStoreMenuView.as_view(),
         name="public-store-menu",
     ),
     path(
         "public/store/<int:store_id>/tables/",
-        PublicStoreTablesView.as_view(),
+        view=PublicStoreTablesView.as_view(),
         name="public-store-tables",
     ),
     path(
         "public/store/<int:store_id>/reservation/",
-        PublicReservationCreateView.as_view(),
+        view=PublicReservationCreateView.as_view(),
         name="public-store-reservation",
     ),
     path(
         "public/store/<int:store_id>/order/",
-        PublicStoreOrderCreateView.as_view(),
+        view=PublicStoreOrderCreateView.as_view(),
         name="public-store-order",
     ),
-
-    # ✅ أخيراً: router endpoints
-    path("", include(router.urls)),
 ]
+
+# ✅ أخيراً: router endpoints
+urlpatterns = public_urlpatterns + [path("", include(router.urls))]
