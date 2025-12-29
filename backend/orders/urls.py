@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     TableViewSet,
-    OrderViewSet,    
+    OrderViewSet,
     InvoiceViewSet,
     ReservationViewSet,
     PublicTableMenuView,
@@ -17,52 +17,51 @@ from .views import (
 )
 
 router = DefaultRouter()
-
-router.register(r"tables", TableViewSet, basename="table")
-router.register(r"reservations", ReservationViewSet, basename="reservation")
-router.register(r"invoices", InvoiceViewSet, basename="invoice")
-router.register(r"", OrderViewSet, basename="order")
+router.register("tables", TableViewSet, basename="table")
+router.register("reservations", ReservationViewSet, basename="reservation")
+router.register("invoices", InvoiceViewSet, basename="invoice")
+router.register("", OrderViewSet, basename="order")
 
 app_name = "orders"
 
-public_urlpatterns = [
-    # ✅ أولاً: public endpoints (عشان مافيش أي احتمالات routing غريبة)
+urlpatterns = [
+    # ===== Public endpoints (بدون Auth) =====
     path(
         "public/table/<int:table_id>/menu/",
-        view=PublicTableMenuView.as_view(),
+        PublicTableMenuView.as_view(),
         name="public-table-menu",
     ),
     path(
         "public/invoices/<str:invoice_number>/",
-        view=PublicInvoiceDetailView.as_view(),
+        PublicInvoiceDetailView.as_view(),
         name="public-invoice-detail",
     ),
     path(
         "public/table/<int:table_id>/order/",
-        view=PublicTableOrderCreateView.as_view(),
+        PublicTableOrderCreateView.as_view(),
         name="public-table-order",
     ),
     path(
         "public/store/<int:store_id>/menu/",
-        view=PublicStoreMenuView.as_view(),
+        PublicStoreMenuView.as_view(),
         name="public-store-menu",
     ),
     path(
         "public/store/<int:store_id>/tables/",
-        view=PublicStoreTablesView.as_view(),
+        PublicStoreTablesView.as_view(),
         name="public-store-tables",
     ),
     path(
         "public/store/<int:store_id>/reservation/",
-        view=PublicReservationCreateView.as_view(),
+        PublicReservationCreateView.as_view(),
         name="public-store-reservation",
     ),
     path(
         "public/store/<int:store_id>/order/",
-        view=PublicStoreOrderCreateView.as_view(),
+        PublicStoreOrderCreateView.as_view(),
         name="public-store-order",
     ),
-]
 
-# ✅ أخيراً: router endpoints
-urlpatterns = public_urlpatterns + [path("", include(router.urls))]
+    # ===== Router endpoints (لوحة الإدارة / API الأساسية) =====
+    path("", include(router.urls)),
+]
