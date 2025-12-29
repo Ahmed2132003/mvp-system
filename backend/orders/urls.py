@@ -25,10 +25,7 @@ router.register(r"", OrderViewSet, basename="order")
 
 urlpatterns = [
     # ✅ أولاً: public endpoints (عشان مافيش أي احتمالات routing غريبة)
-    path(        
-        PublicTableMenuView.as_view(),
-        name="public-table-menu",
-    ),
+    path("public/table/<int:table_id>/menu/", PublicTableMenuView.as_view(), name="public-table-menu"),    
     path(
         "public/invoices/<str:invoice_number>/",
         PublicInvoiceDetailView.as_view(),
