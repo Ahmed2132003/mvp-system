@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../lib/api';
 import { notifyError, notifySuccess } from '../lib/notifications';
 import { useStore } from '../hooks/useStore';
+import BrandMark from '../components/layout/BrandMark';
 
 // =====================
 // Sidebar Navigation
@@ -403,12 +404,10 @@ export default function Dashboard() {
         {/* Sidebar - Desktop */}
         <aside className="hidden md:flex w-64 flex-col bg-white border-l border-gray-200 shadow-sm dark:bg-slate-900 dark:border-slate-800">
           <div className="px-6 py-5 border-b dark:border-slate-800">
-            <h1 className="text-xl font-bold text-primary dark:text-blue-300">MVP POS</h1>
-            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
-              {isAr ? 'لوحة تحكم الكافيه / المطعم' : 'Restaurant / Café Dashboard'}
-            </p>
+            <BrandMark
+              subtitle={isAr ? 'لوحة تحكم الكافيه / المطعم' : 'Restaurant / Café Dashboard'}
+            />
           </div>
-
           <nav className="flex-1 px-3 py-4 space-y-1">
             <SidebarNav lang={lang} />
           </nav>
@@ -426,12 +425,10 @@ export default function Dashboard() {
             {/* Panel */}
             <div className="relative ml-auto h-full w-64 bg-white shadow-xl border-l border-gray-200 flex flex-col dark:bg-slate-900 dark:border-slate-800">
               <div className="px-4 py-4 border-b flex items-center justify-between dark:border-slate-800">
-                <div>
-                  <h2 className="text-base font-bold text-primary dark:text-blue-300">MVP POS</h2>
-                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
-                    {isAr ? 'القائمة الرئيسية' : 'Main Menu'}
-                  </p>
-                </div>
+                <BrandMark
+                  variant="mobile"
+                  subtitle={isAr ? 'القائمة الرئيسية' : 'Main Menu'}
+                />                
                 <button
                   type="button"
                   onClick={() => setMobileSidebarOpen(false)}

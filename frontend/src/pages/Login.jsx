@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom';
 import LoginForm from '../components/auth/LoginForm';
 import LoginBackground from '../components/auth/LoginBackground';
 import { notifySuccess, notifyError } from '../lib/notifications';
+import BrandMark from '../components/layout/BrandMark';
 
 export default function Login() {
   const location = useLocation();
@@ -47,17 +48,20 @@ export default function Login() {
       <div className="flex-1 flex items-center justify-center relative z-10 px-6">
         <div className="w-full max-w-md">
           <div className="text-center mb-10">
-            <h1 className="text-4xl font-bold text-primary mb-2">MVP POS</h1>
-            <p className="text-text-secondary text-lg">
-              نظام إدارة المطاعم والكافيهات الأقوى في مصر
-            </p>
+            <BrandMark
+              variant="auth"
+              subtitle="نظام إدارة المطاعم والكافيهات الأقوى في مصر"
+              className="justify-center flex-col text-center gap-4"
+              logoClassName="mx-auto"
+              titleClassName="text-4xl font-bold text-primary"
+              subtitleClassName="text-text-secondary text-lg"
+            />
           </div>
-
           {/* رسائل التفعيل (اختياري: بالإضافة للتوست) */}
           {isVerified && (
             <div className="mb-8 p-6 bg-green-100 border-2 border-green-500 text-green-800 rounded-2xl text-center font-bold shadow-lg animate-pulse">
               <p className="text-xl">تم تفعيل حسابك بنجاح!</p>
-              <p className="text-lg mt-2">مرحبًا بيك في MVP POS</p>
+              <p className="text-lg mt-2">مرحبًا بيك في NIBAR Cloud System</p>
             </div>
           )}
 

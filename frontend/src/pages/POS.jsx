@@ -12,6 +12,7 @@ import { useStore } from '../hooks/useStore';
 import { useAuth } from '../hooks/useAuth';
 import { notifyInfo, notifySuccess } from '../lib/notifications';
 import { openInvoicePrintWindow } from '../lib/invoice';
+import BrandMark from '../components/layout/BrandMark';
 
 const ORDER_TYPES = {
   DINE_IN: 'DINE_IN',
@@ -1328,12 +1329,8 @@ export default function POS() {
         {/* Sidebar - Desktop */}
         <aside className="hidden md:flex w-64 flex-col bg-white dark:bg-slate-900 border-l border-gray-200 dark:border-slate-800 shadow-sm">
           <div className="px-6 py-5 border-b border-gray-200 dark:border-slate-800">
-            <h1 className="text-xl font-bold text-primary">MVP POS</h1>
-            <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">
-              {isAr ? 'شاشة الكاشير / نقطة البيع' : 'Cashier / Point of sale'}
-            </p>
+            <BrandMark subtitle={isAr ? 'شاشة الكاشير / نقطة البيع' : 'Cashier / Point of sale'} />
           </div>
-
           <nav className="flex-1 px-3 py-4 space-y-1">
             <Link
               to="/dashboard"
@@ -1378,12 +1375,7 @@ export default function POS() {
             />
             <div className="relative ml-auto h-full w-64 bg-white dark:bg-slate-900 shadow-xl border-l border-gray-200 dark:border-slate-800 flex flex-col">
               <div className="px-4 py-4 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-primary">MVP POS</h2>
-                  <p className="text-[11px] text-gray-500 mt-0.5 dark:text-gray-400">
-                    {isAr ? 'القائمة الرئيسية' : 'Main menu'}
-                  </p>
-                </div>
+                <BrandMark variant="mobile" subtitle={isAr ? 'القائمة الرئيسية' : 'Main menu'} />                
                 <button
                   type="button"
                   onClick={() => setMobileSidebarOpen(false)}
