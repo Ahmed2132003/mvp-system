@@ -99,7 +99,6 @@ function SidebarNav({ lang }) {
         type="button"
         className="w-full text-right flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
       >
-        {isAr ? 'التقارير' : 'Reports (Soon)'}
       </button>
     </>
   );
@@ -451,7 +450,7 @@ export default function Dashboard() {
               </nav>
 
               <div className="px-4 py-3 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-                {isAr ? 'نسخة تجريبية • جاهز للانطلاق 🚀' : 'Beta version • Ready to launch 🚀'}
+                {isAr ? " تم تطوير هذا النظام بواسطة شركة كريتيفيتي كود." : "System developed by Creativity Code"}
               </div>
             </div>
           </div>
