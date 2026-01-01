@@ -109,22 +109,44 @@ export default function StoreMenu() {
     async (branchId = null) => {
       try {
         setLoading(true);
+        setError(null);
+
+        const targetBranchId = branchId || selectedBranchId || null;
 
         const res = await api.get(`/orders/public/store/${storeId}/menu/`, {
-          params: branchId ? { branch_id: branchId } : undefined,
+          params: targetBranchId ? { branch_id: targetBranchId } : undefined,
         });
         setStore(res.data.store);
+        const fetchedBranches = res.data.branches || [];
+
         setItems(res.data.items || []);
         setTrendingItems(res.data.trending_items || []);
-        setBranches(res.data.branches || []);
+        setBranches(fetchedBranches);
 
-        if (!selectedBranchId && res.data.branches?.length) {
-          setSelectedBranchId(String(res.data.branches[0].id));
+        const backendBranchId = res.data.branch?.id
+          ? String(res.data.branch.id)
+          : null;
+        const requestedBranchId = targetBranchId ? String(targetBranchId) : null;
+        const branchIds = new Set(
+          fetchedBranches.map((branch) => String(branch.id))
+        );
+
+        let nextBranchId =
+          requestedBranchId || backendBranchId || (fetchedBranches[0]?.id ? String(fetchedBranches[0].id) : null);
+
+        if (nextBranchId && !branchIds.has(nextBranchId)) {
+          nextBranchId = fetchedBranches.length
+            ? String(fetchedBranches[0].id)
+            : null;
+        }
+
+        if (nextBranchId && nextBranchId !== String(selectedBranchId)) {
+          setSelectedBranchId(nextBranchId);
         }
       } catch (err) {
         console.error('خطأ في تحميل منيو الفرع:', err);
         const msg = isAr
-          ? 'حدث خطأ أثناء تحميل قائمة الفرع، برجاء المحاولة لاحقًا.'
+          ? 'حدث خطأ أثناء تحميل قائمة الفرع، برجاء المحاولة لاحقًا.'          
           : 'An error occurred while loading the store menu. Please try again later.';
         setError(msg);
         notifyError(msg);

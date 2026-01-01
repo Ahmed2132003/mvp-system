@@ -653,12 +653,12 @@ class PublicStoreMenuView(APIView):
     
     def get(self, request, store_id):
         store = get_object_or_404(Store, pk=store_id)
-        branch_id = request.query_params.get("branch_id")
+        branch_id = request.query_params.get("branch_id") or request.query_params.get("branch")
         branch = select_branch_for_store(store, branch_id)
 
         items_qs = Item.objects.filter(
             store=store,
-            is_active=True,
+            is_active=True,            
         ).select_related("category")
         
         items_data = []
@@ -684,11 +684,12 @@ class PublicStoreMenuView(APIView):
                 "phone": store.phone,
                 "paymob_enabled": paymob_enabled,  # ✅ جديد
             },
+            "branch": {"id": branch.id, "name": branch.name} if branch else None,
             "branches": [
                 {"id": b.id, "name": b.name}
                 for b in store.branches.filter(is_active=True).order_by("name")
             ],
-            "trending_items": trending_items_for_store(store, branch=branch),
+            "trending_items": trending_items_for_store(store, branch=branch),            
             "items": items_data,
         }
         return Response(data, status=status.HTTP_200_OK)
@@ -703,9 +704,8 @@ class PublicStoreOrderCreateView(APIView):
 
     def post(self, request, store_id):
         store = get_object_or_404(Store, pk=store_id)
-        branch_id = request.data.get("branch_id")
+        branch_id = request.data.get("branch_id") or request.data.get("branch")
         branch = select_branch_for_store(store, branch_id)
-
         if not branch:
             return Response(
                 {"detail": "لا يوجد فرع متاح لهذا المتجر."},
