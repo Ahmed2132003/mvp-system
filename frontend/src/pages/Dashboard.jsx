@@ -160,7 +160,7 @@ export default function Dashboard() {
   useEffect(() => {
     localStorage.setItem('theme', theme);
     if (theme === 'dark') {
-      document.documentElement.classList.add('dark');      
+      document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
@@ -354,7 +354,7 @@ export default function Dashboard() {
 
     return () => clearInterval(interval);
   }, [selectedStoreId, isAr, playNotificationSound]); // intentionally omitting fetch* to keep stable interval
-  
+
   const sales = summary?.sales || {};
   const salesOverTime = summary?.sales_over_time || [];
   const lowStock = summary?.low_stock || [];
@@ -412,7 +412,7 @@ export default function Dashboard() {
           </nav>
 
           <div className="px-4 py-4 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-            {isAr ? 'نسخة تجريبية • جاهز للانطلاق 🚀' : 'Beta version • Ready to launch 🚀'}
+            {isAr ? 'تم تطوير هذا السيستم بواسطة كريتفيتي كود' : 'تم تطوير هذا السيستم بواسطة كريتفيتي كود'}
           </div>
         </aside>
 
@@ -427,7 +427,7 @@ export default function Dashboard() {
                 <BrandMark
                   variant="mobile"
                   subtitle={isAr ? 'القائمة الرئيسية' : 'Main Menu'}
-                />                
+                />
                 <button
                   type="button"
                   onClick={() => setMobileSidebarOpen(false)}
@@ -450,7 +450,7 @@ export default function Dashboard() {
               </nav>
 
               <div className="px-4 py-3 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-                {isAr ? " تم تطوير هذا النظام بواسطة شركة كريتيفيتي كود." : "System developed by Creativity Code"}
+                {isAr ? ' تم تطوير هذا النظام بواسطة شركة كريتيفيتي كود.' : 'System developed by Creativity Code'}
               </div>
             </div>
           </div>
@@ -510,7 +510,7 @@ export default function Dashboard() {
                   </Link>
                 </div>
               )}
-              
+
               {/* Filters */}
               <select className="hidden sm:block text-sm border border-gray-200 rounded-xl px-3 py-1.5 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100">
                 <option>{isAr ? 'اليوم' : 'Today'}</option>
@@ -815,7 +815,7 @@ export default function Dashboard() {
                               key={order.id}
                               className="border border-gray-100 rounded-xl p-3 bg-gray-50/60 flex flex-col gap-1 dark:bg-slate-800/70 dark:border-slate-700"
                             >
-                              <div className="flex items-center justify-between">
+                              <div className="flex items-center justify_between">
                                 <span className="text-xs font-semibold text-gray-800 dark:text-gray-100">
                                   {isAr ? `طلب #${order.id}` : `Order #${order.id}`}
                                 </span>
@@ -938,7 +938,7 @@ export default function Dashboard() {
                       {lowStock.map((item, idx) => (
                         <div
                           key={`${item.item}-${idx}`}
-                          className="flex items-center justify-between text-xs border-b border-gray-50 pb-2 last:border-0 last:pb-0 dark:border-slate-800"
+                          className="flex items_center justify-between text-xs border-b border-gray-50 pb-2 last:border-0 last:pb-0 dark:border-slate-800"
                         >
                           <div>
                             <p className="font-semibold text-gray-800 dark:text-gray-100">

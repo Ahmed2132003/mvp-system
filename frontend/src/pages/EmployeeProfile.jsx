@@ -712,7 +712,7 @@ export default function EmployeeProfile() {
           </nav>
 
           <div className="px-4 py-4 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-            {isAr ? 'نسخة تجريبية • جاهز للانطلاق 🚀' : 'Beta version • Ready to launch 🚀'}
+            {isAr ? 'تم تطوير هذا السيستم بواسطة كريتفيتي كود' : 'تم تطوير هذا السيستم بواسطة كريتفيتي كود'}
           </div>
         </aside>
 
@@ -721,7 +721,7 @@ export default function EmployeeProfile() {
           <div className="fixed inset-0 z-40 flex md:hidden" aria-modal="true">
             <div className="fixed inset-0 bg-black/40" onClick={() => setMobileSidebarOpen(false)} />
             <div className="relative ml-auto h-full w-64 bg-white shadow-xl border-l border-gray-200 flex flex-col dark:bg-slate-900 dark:border-slate-800">
-              <div className="px-4 py-4 border-b flex items-center justify-between dark:border-slate-800">␊
+              <div className="px-4 py-4 border-b flex items-center justify-between dark:border-slate-800">
                 <BrandMark
                   variant="mobile"
                   subtitle={isAr ? 'القائمة الرئيسية' : 'Main Menu'}
@@ -743,7 +743,7 @@ export default function EmployeeProfile() {
               </nav>
 
               <div className="px-4 py-3 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-                {isAr ? 'نسخة تجريبية • جاهز للانطلاق 🚀' : 'Beta version • Ready to launch 🚀'}
+                {isAr ? 'تم تطوير هذا السيستم بواسطة كريتفيتي كود' : 'تم تطوير هذا السيستم بواسطة كريتفيتي كود'}
               </div>
             </div>
           </div>

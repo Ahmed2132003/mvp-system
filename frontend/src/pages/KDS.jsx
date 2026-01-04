@@ -93,13 +93,6 @@ function SidebarNav({ lang }) {
       >
         {isAr ? 'إدارة المستخدمين' : 'User Management'}
       </Link>
-
-      <button
-        type="button"
-        className="w-full text-right flex items-center px-3 py-2 rounded-xl text-sm text-gray-700 hover:bg-gray-100 transition dark:text-gray-200 dark:hover:bg-slate-800"
-      >
-        {isAr ? 'التقارير' : 'Reports (Soon)'}
-      </button>
     </>
   );
 }

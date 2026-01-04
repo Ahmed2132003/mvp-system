@@ -195,7 +195,7 @@ export default function TablesPage() {
               </nav>
 
               <div className="px-4 py-3 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-                {isAr ? "نسخة تجريبية • جاهز للانطلاق 🚀" : "Beta version • Ready to launch 🚀"}
+                {isAr ? "تم تطوير هذا السيستم بواسطة كريتفيتي كود" : "تم تطوير هذا السيستم بواسطة كريتفيتي كود"}
               </div>
             </div>
           </div>

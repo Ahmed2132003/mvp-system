@@ -362,7 +362,7 @@ export default function AdminAccounts() {
           </nav>
 
           <div className="px-4 py-4 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-            {isAr ? 'نسخة تجريبية • جاهز للانطلاق 🚀' : 'Beta version • Ready to launch 🚀'}
+            {isAr ? 'تم تطوير هذا السيستم بواسطة كريتفيتي كود' : 'تم تطوير هذا السيستم بواسطة كريتفيتي كود'}
           </div>
         </aside>
 
@@ -378,7 +378,7 @@ export default function AdminAccounts() {
                 <BrandMark
                   variant="mobile"
                   subtitle={isAr ? 'القائمة الرئيسية' : 'Main Menu'}
-                />                
+                />
                 <button
                   type="button"
                   onClick={() => setMobileSidebarOpen(false)}
@@ -401,7 +401,7 @@ export default function AdminAccounts() {
               </nav>
 
               <div className="px-4 py-3 border-t text-xs text-gray-500 dark:border-slate-800 dark:text-gray-400">
-                {isAr ? 'نسخة تجريبية • جاهز للانطلاق 🚀' : 'Beta version • Ready to launch 🚀'}
+                {isAr ? 'تم تطوير هذا السيستم بواسطة كريتفيتي كود' : 'تم تطوير هذا السيستم بواسطة كريتفيتي كود'}
               </div>
             </div>
           </div>
