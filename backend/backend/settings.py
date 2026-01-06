@@ -4,6 +4,9 @@ from decouple import config
 from datetime import timedelta
 import importlib.util
 import os
+import dj_database_url
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-me-in-production')
@@ -98,6 +101,16 @@ DATABASES = {
     }
 }
 
+# Override DB with Heroku DATABASE_URL if it exists
+DATABASE_URL = config('DATABASE_URL', default='')
+
+if DATABASE_URL:
+    DATABASES['default'] = dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=600
+    )
+
+
 AUTH_USER_MODEL = 'core.User'
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -148,6 +161,14 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3001",
 ]
 
+extra_cors = config('CORS_ALLOWED_ORIGINS', default='')
+if extra_cors:
+    CORS_ALLOWED_ORIGINS += [
+        origin.strip()
+        for origin in extra_cors.split(',')
+        if origin.strip()
+    ]
+
 # JWT Settings
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
@@ -188,6 +209,9 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'creativitycode78@gmail.com'
-EMAIL_HOST_PASSWORD = 'odxj slcp lkoc wauf'  
-DEFAULT_FROM_EMAIL = 'NIBAR CLOUD SYSTEM <creativitycode78@gmail.com>'
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='creativitycode78@gmail.com')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config(
+    'DEFAULT_FROM_EMAIL',
+    default='NIBAR CLOUD SYSTEM <creativitycode78@gmail.com>'
+)

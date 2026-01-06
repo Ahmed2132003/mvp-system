@@ -21,3 +21,6 @@ python-decouple
 channels==4.1.0
 channels_redis==4.2.0
 whitenoise>=6.7.0
+gunicorn
+dj-database-url
+daphne
