@@ -1,6 +1,7 @@
 import base64
 import calendar
 from datetime import date
+from decimal import Decimal
 from io import BytesIO
 
 import qrcode
@@ -8,13 +9,14 @@ from django.conf import settings
 from django.urls import reverse
 from django.core.exceptions import ValidationError
 from django.shortcuts import redirect, render
+from django.db.models import Q, Sum
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.utils import timezone
 
-from .models import AttendanceLink, AttendanceLog, LeaveRequest
+from .models import AttendanceLink, AttendanceLog, LeaveRequest, EmployeeShiftAssignment
 from .serializers import AttendanceLogSerializer
 
 
@@ -54,9 +56,55 @@ class AttendanceLogViewSet(viewsets.ReadOnlyModelViewSet):
         return qs
 
 
+def _serialize_log(log):
+    if not log:
+        return None
+    return {
+        "id": log.id,
+        "work_date": log.work_date,
+        "check_in": log.check_in,
+        "check_out": log.check_out,
+        "is_late": log.is_late,
+        "late_minutes": log.late_minutes,
+        "penalty_applied": float(log.penalty_applied or 0),
+        "location": log.location,
+        "gps": log.gps,
+        "method": log.method,
+    }
+
+
+def _get_shift_summary(employee, day):
+    assignment = (
+        EmployeeShiftAssignment.objects
+        .filter(employee=employee, start_date__lte=day)
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=day))
+        .select_related("shift")
+        .order_by("-start_date")
+        .first()
+    )
+    if assignment and assignment.shift:
+        shift = assignment.shift
+        return {
+            "start": shift.start_time,
+            "grace_minutes": shift.grace_minutes,
+            "penalty_per_15min": float(shift.penalty_per_15min or 0),
+            "name": shift.name,
+        }
+
+    store_settings = getattr(employee.store, "settings", None)
+    if store_settings:
+        return {
+            "start": store_settings.attendance_shift_start,
+            "grace_minutes": store_settings.attendance_grace_minutes,
+            "penalty_per_15min": float(store_settings.attendance_penalty_per_15min or 0),
+            "name": None,
+        }
+    return None
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def my_attendance_status(request):
+def my_attendance_status(request):    
     """
     يرجع ملخص حالة الموظف الحالي:
     - آخر حركة (حضور/انصراف)
@@ -85,40 +133,66 @@ def my_attendance_status(request):
 
     active_log = today_logs.filter(check_out__isnull=True).last()
 
+    month_start = today.replace(day=1)
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    month_end_exclusive = month_start.replace(day=last_day) + timezone.timedelta(days=1)
+
+    month_logs = AttendanceLog.objects.filter(
+        employee=employee,
+        work_date__gte=month_start,
+        work_date__lt=month_end_exclusive,
+    )
+    present_days = month_logs.values("work_date").distinct().count()
+    late_minutes = int(month_logs.aggregate(s=Sum("late_minutes"))["s"] or 0)
+    penalties = Decimal(month_logs.aggregate(s=Sum("penalty_applied"))["s"] or 0)
+
+    daily_rate = Decimal(getattr(employee, "salary", 0) or 0)
+    attendance_value = daily_rate * Decimal(present_days)
+    estimated_net_salary = max(Decimal("0"), attendance_value - penalties)
+
+    shift_summary = _get_shift_summary(employee, today)
+
     # بناء الملخص
     data = {
         "employee": {
             "id": employee.id,
             "name": employee.user.name or employee.user.email,
+            "salary": float(daily_rate or 0),
             "store": {
                 "id": employee.store_id,
                 "name": getattr(employee.store, "name", None),
             },
+            "store_id": employee.store_id,
+            "store_name": getattr(employee.store, "name", None),
             "qr_attendance_base64": getattr(employee, "qr_attendance_base64", None),
-        },        
+        },
         "today": {
             "date": today,
             "active_log_id": active_log.id if active_log else None,
             "logs_count": today_logs.count(),
-            "first_check_in": today_logs.first().check_in if today_logs else None,
+            "first_check_in": today_logs.first().check_in if today_logs else None,            
             "last_check_out": (
                 today_logs.exclude(check_out__isnull=True).last().check_out
                 if today_logs.exclude(check_out__isnull=True).exists()
                 else None
             ),
         },
-        "last_log": {
-            "id": last_log.id if last_log else None,
-            "check_in": last_log.check_in if last_log else None,
-            "check_out": last_log.check_out if last_log else None,
-            "status": (
-                "ACTIVE" if (last_log and last_log.check_out is None) else
-                ("CLOSED" if last_log else None)
-            ),
+        "active_log": _serialize_log(active_log),
+        "today_log": _serialize_log(today_logs.last()) if today_logs.exists() else None,
+        "last_log": _serialize_log(last_log),
+        "shift": shift_summary,
+        "month": {
+            "present_days": present_days,
+            "absent_days": max(0, last_day - present_days),
+            "late_minutes": late_minutes,
+            "penalties": float(penalties or 0),
+            "daily_rate": float(daily_rate or 0),
+            "attendance_value": float(attendance_value or 0),
+            "estimated_net_salary": float(estimated_net_salary or 0),
+            "projected_net_salary": float(estimated_net_salary or 0),
         },
         "server_time": now,
     }
-
     return Response(data)
 
 
@@ -136,50 +210,35 @@ def my_attendance_logs(request):
     year = int(request.query_params.get("year") or today.year)
     month = int(request.query_params.get("month") or today.month)
 
-    logs = AttendanceLog.objects.filter(
-        employee=employee,
-        work_date__year=year,
-        work_date__month=month,
-    ).order_by("work_date", "check_in")
+    limit = request.query_params.get("limit")
+    try:
+        limit = int(limit) if limit is not None else 50
+    except (TypeError, ValueError):
+        limit = 50
 
-    # بناء جدول الأيام
-    _, num_days = calendar.monthrange(year, month)
-    days_map = {day: {"logs": [], "total_minutes": 0} for day in range(1, num_days + 1)}
-
-    for log in logs:
-        day = log.work_date.day
-        duration = log.duration_minutes or 0        
-        days_map[day]["logs"].append(
-            {
-                "id": log.id,
-                "check_in": log.check_in,
-                "check_out": log.check_out,
-                "duration_minutes": duration,
-                "location": log.location,
-                "gps": log.gps,
-            }
+    logs = (
+        AttendanceLog.objects.filter(
+            employee=employee,
+            work_date__year=year,
+            work_date__month=month,
         )
-        days_map[day]["total_minutes"] += duration
-
-    # إحصائيات شهرية
-    month_stats = {
-        "total_days": num_days,
-        "worked_days": sum(1 for d in days_map.values() if d["logs"]),
-        "absent_days": sum(1 for d in days_map.values() if not d["logs"]),
-        "total_minutes": sum(d["total_minutes"] for d in days_map.values()),
-        "late_minutes": 0,  # Placeholder لو عندك منطق التأخير
-        "penalties": 0,     # Placeholder لو عندك منطق الجزاءات
-    }
-
-    return Response(
-        {
-            "year": year,
-            "month": month,
-            "days": days_map,
-            "stats": month_stats,
-        }
+        .order_by("-check_in")[:limit]
     )
 
+    payload = [
+        {
+            "id": log.id,
+            "work_date": log.work_date,
+            "check_in": log.check_in,
+            "check_out": log.check_out,
+            "location": log.location,
+            "gps": log.gps,
+            "method": log.method,
+        }
+        for log in logs
+    ]
+
+    return Response(payload)
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
