@@ -381,7 +381,7 @@ def qr_redirect(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])  # ← التعديل الوحيد هنا
 def qr_use(request):
     """
     يستهلك AttendanceLink لمرة واحدة:
