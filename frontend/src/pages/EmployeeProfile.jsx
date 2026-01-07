@@ -146,7 +146,9 @@ export default function EmployeeProfile() {
     user_name: '',
     user_email: '',
     user_phone: '',
-  });  
+    shift_start_time: '',
+    shift_end_time: '',
+  });     
   const [stores, setStores] = useState([]);
   const [branches, setBranches] = useState([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -220,7 +222,9 @@ export default function EmployeeProfile() {
         user_name: res.data.user?.name ?? '',
         user_email: res.data.user?.email ?? '',
         user_phone: res.data.user?.phone ?? '',
-      });
+        shift_start_time: res.data.shift_start_time ? String(res.data.shift_start_time).slice(0, 5) : '',
+        shift_end_time: res.data.shift_end_time ? String(res.data.shift_end_time).slice(0, 5) : '',
+      });      
     } catch {
       notifyError(isAr ? 'فشل تحميل بيانات الموظف' : 'Failed to load employee data');
     }
@@ -659,7 +663,9 @@ export default function EmployeeProfile() {
         user_name: editData.user_name || '',
         user_email: editData.user_email || undefined,
         user_phone: editData.user_phone || '',
-      });
+        shift_start_time: editData.shift_start_time || null,
+        shift_end_time: editData.shift_end_time || null,
+      });      
       notifySuccess(isAr ? 'تم تحديث بيانات الموظف' : 'Employee updated');
       fetchEmployee();
     } catch (err) {
@@ -995,9 +1001,16 @@ export default function EmployeeProfile() {
                               <p className="text-gray-700 dark:text-gray-200">
                                 <b className="text-gray-900 dark:text-gray-50">{isAr ? 'تاريخ التعيين:' : 'Hire date:'}</b> {employee.hire_date || '—'}
                               </p>
+                              <p className="text-gray-700 dark:text-gray-200">
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'بداية الشفت:' : 'Shift start:'}</b>{' '}
+                                {employee.shift_start_time ? String(employee.shift_start_time).slice(0, 5) : '—'}
+                              </p>
+                              <p className="text-gray-700 dark:text-gray-200">
+                                <b className="text-gray-900 dark:text-gray-50">{isAr ? 'نهاية الشفت:' : 'Shift end:'}</b>{' '}
+                                {employee.shift_end_time ? String(employee.shift_end_time).slice(0, 5) : '—'}
+                              </p>
                             </div>
                           </div>
-
                           {employee.qr_code_attendance_base64 ? (
                             <div className="bg-gray-50/60 border border-gray-100 rounded-2xl p-4 text-center dark:bg-slate-800/60 dark:border-slate-700">
                               <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-50 mb-3">{isAr ? 'QR الحضور والانصراف' : 'Attendance QR'}</h3>
@@ -1088,6 +1101,25 @@ export default function EmployeeProfile() {
                                 />
                               </label>
 
+                              <label className="space-y-1 text-xs">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'بداية الشفت' : 'Shift start'}</span>
+                                <input
+                                  type="time"
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                  value={editData.shift_start_time || ''}
+                                  onChange={(e) => setEditData({ ...editData, shift_start_time: e.target.value })}
+                                />
+                              </label>
+
+                              <label className="space-y-1 text-xs">
+                                <span className="text-gray-600 dark:text-gray-300">{isAr ? 'نهاية الشفت' : 'Shift end'}</span>
+                                <input
+                                  type="time"
+                                  className="w-full rounded-xl border border-gray-200 px-3 py-2 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-100"
+                                  value={editData.shift_end_time || ''}
+                                  onChange={(e) => setEditData({ ...editData, shift_end_time: e.target.value })}
+                                />
+                              </label>
                               <label className="space-y-1 text-xs">
                                 <span className="text-gray-600 dark:text-gray-300">{isAr ? 'المتجر' : 'Store'}</span>
                                 <select

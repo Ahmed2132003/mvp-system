@@ -74,11 +74,31 @@ def _serialize_log(log):
 
 
 def _get_shift_summary(employee, day):
+    if getattr(employee, "shift_start_time", None):
+        branch_penalty = None
+        if getattr(employee, "branch_id", None):
+            branch_penalty = getattr(employee.branch, "attendance_penalty_per_15min", None)
+
+        store_settings = getattr(employee.store, "settings", None)
+        penalty_value = None
+        if branch_penalty is not None:
+            penalty_value = float(branch_penalty or 0)
+        elif store_settings:
+            penalty_value = float(store_settings.attendance_penalty_per_15min or 0)
+
+        return {
+            "start": employee.shift_start_time,
+            "end": getattr(employee, "shift_end_time", None),
+            "grace_minutes": store_settings.attendance_grace_minutes if store_settings else 0,
+            "penalty_per_15min": penalty_value,
+            "name": None,
+        }
+
     assignment = (
         EmployeeShiftAssignment.objects
         .filter(employee=employee, start_date__lte=day)
         .filter(Q(end_date__isnull=True) | Q(end_date__gte=day))
-        .select_related("shift")
+        .select_related("shift")        
         .order_by("-start_date")
         .first()
     )
@@ -86,6 +106,7 @@ def _get_shift_summary(employee, day):
         shift = assignment.shift
         return {
             "start": shift.start_time,
+            "end": shift.end_time,
             "grace_minutes": shift.grace_minutes,
             "penalty_per_15min": float(shift.penalty_per_15min or 0),
             "name": shift.name,
@@ -93,12 +114,19 @@ def _get_shift_summary(employee, day):
 
     store_settings = getattr(employee.store, "settings", None)
     if store_settings:
+        branch_penalty = None
+        if getattr(employee, "branch_id", None):
+            branch_penalty = getattr(employee.branch, "attendance_penalty_per_15min", None)
+        penalty_value = float(store_settings.attendance_penalty_per_15min or 0)
+        if branch_penalty is not None:
+            penalty_value = float(branch_penalty or 0)
         return {
             "start": store_settings.attendance_shift_start,
+            "end": None,
             "grace_minutes": store_settings.attendance_grace_minutes,
-            "penalty_per_15min": float(store_settings.attendance_penalty_per_15min or 0),
+            "penalty_per_15min": penalty_value,
             "name": None,
-        }
+        }        
     return None
 
 

@@ -121,14 +121,15 @@ class AttendanceLog(models.Model):
         """
         يحسب التأخير والغرامة من:
         1) Shift assignment لو موجود
-        2) وإلا fallback لـ StoreSettings:
+        2) شفت الموظف لو متحدد
+        3) وإلا fallback لـ StoreSettings:
            - attendance_shift_start (وقت)
            - attendance_grace_minutes (دقائق)
            - attendance_penalty_per_15min (قيمة)
         """
         if not self.check_in:
             return
-
+        
         local_dt = timezone.localtime(self.check_in)
         day = local_dt.date()
 
@@ -144,16 +145,30 @@ class AttendanceLog(models.Model):
             grace_minutes = int(shift.grace_minutes or 0)
             penalty_per_15 = float(shift.penalty_per_15min or 0)
         else:
-            # 2) Fallback to store settings
+            # 2) Employee-specific shift
+            employee_shift_start = getattr(self.employee, "shift_start_time", None)
             store_settings = getattr(self.employee.store, "settings", None)
-            if not store_settings:
-                return
-            shift_start_time = getattr(store_settings, "attendance_shift_start", None)
-            if not shift_start_time:
-                return
-            grace_minutes = int(getattr(store_settings, "attendance_grace_minutes", 0) or 0)
-            penalty_per_15 = float(getattr(store_settings, "attendance_penalty_per_15min", 0) or 0)
+            if employee_shift_start:
+                shift_start_time = employee_shift_start
+                grace_minutes = int(getattr(store_settings, "attendance_grace_minutes", 0) or 0) if store_settings else 0
+            else:
+                # 3) Fallback to store settings
+                if not store_settings:
+                    return
+                shift_start_time = getattr(store_settings, "attendance_shift_start", None)
+                if not shift_start_time:
+                    return
+                grace_minutes = int(getattr(store_settings, "attendance_grace_minutes", 0) or 0)
 
+            branch_penalty = None
+            if getattr(self.employee, "branch_id", None):
+                branch_penalty = getattr(self.employee.branch, "attendance_penalty_per_15min", None)
+
+            if branch_penalty is not None:
+                penalty_per_15 = float(branch_penalty or 0)
+            else:
+                penalty_per_15 = float(getattr(store_settings, "attendance_penalty_per_15min", 0) or 0) if store_settings else 0
+                
         shift_start_dt = timezone.make_aware(
             timezone.datetime.combine(day, shift_start_time),
             timezone.get_current_timezone(),

@@ -48,9 +48,10 @@ class EmployeeSerializer(serializers.ModelSerializer):
             "hire_date",
             "salary",
             "advances",
+            "shift_start_time",
+            "shift_end_time",
             
             "is_present",
-
             # ✅ Store QR (موحد)
             "store_qr_attendance_base64",
             "store_qr_attendance_url",

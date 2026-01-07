@@ -15,6 +15,13 @@ class Branch(models.Model):
     is_active = models.BooleanField(default=True)
     qr_menu = models.ImageField(upload_to="branch_qr/", blank=True, null=True)
     qr_menu_base64 = models.TextField(blank=True, null=True, editable=False)
+    attendance_penalty_per_15min = models.DecimalField(
+        "غرامة التأخير لكل 15 دقيقة",
+        max_digits=8,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
 
     def __str__(self):
         return f"{self.store.name} - {self.name}"

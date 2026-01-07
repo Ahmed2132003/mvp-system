@@ -392,7 +392,9 @@ class Employee(models.Model):
     hire_date = models.DateField(null=True, blank=True)
     salary = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     advances = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-
+    shift_start_time = models.TimeField("بداية شفت الموظف", null=True, blank=True)
+    shift_end_time = models.TimeField("نهاية شفت الموظف", null=True, blank=True)
+    
     objects = EmployeeManager()
 
     def __str__(self):

@@ -94,6 +94,7 @@ export default function SettingsPage() {
     service_charge: 0,
     printer_ip: '',
     printer_port: '',
+    attendance_penalty_per_15min: 0,
   });
 
   const [paymob, setPaymob] = useState({
@@ -124,8 +125,8 @@ export default function SettingsPage() {
     phone: '',
     address: '',
     is_active: true,
+    attendance_penalty_per_15min: '',
   });
-
   const storeMenuUrl = useMemo(
     () => (store?.id ? `${window.location.origin}/store/${store.id}/menu` : ''),
     [store]
@@ -241,8 +242,9 @@ export default function SettingsPage() {
         service_charge: settingsRes.data.service_charge,
         printer_ip: settingsRes.data.printer_ip || '',
         printer_port: settingsRes.data.printer_port || '',
+        attendance_penalty_per_15min: settingsRes.data.attendance_penalty_per_15min ?? 0,
       });
-
+      
       setLoyalty({
         is_active: loyaltyRes.data.is_active,
         points_per_egp: loyaltyRes.data.points_per_egp,
@@ -277,6 +279,7 @@ export default function SettingsPage() {
         phone: '',
         address: '',
         is_active: true,
+        attendance_penalty_per_15min: '',
       });
       return;
     }
@@ -286,6 +289,7 @@ export default function SettingsPage() {
       phone: selectedBranch.phone || '',
       address: selectedBranch.address || '',
       is_active: selectedBranch.is_active ?? true,
+      attendance_penalty_per_15min: selectedBranch.attendance_penalty_per_15min ?? '',
     });
   }, [selectedBranch]);
 
@@ -435,6 +439,10 @@ export default function SettingsPage() {
         phone: branchForm.phone,
         address: branchForm.address,
         is_active: branchForm.is_active,
+        attendance_penalty_per_15min:
+          branchForm.attendance_penalty_per_15min === ''
+            ? null
+            : Number(branchForm.attendance_penalty_per_15min),
       });
 
       showSuccess(isAr ? 'تم حفظ إعدادات الفرع بنجاح.' : 'Branch settings saved successfully.');
@@ -936,10 +944,24 @@ export default function SettingsPage() {
                         <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
                           {isAr ? 'مصاريف الخدمة %' : 'Service charge %'}
                         </label>
-                        <input
+                        <input                        
                           type="number"
                           name="service_charge"
                           value={storeSettings.service_charge}
+                          onChange={handleStoreSettingsChange}
+                          className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                          step="0.01"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                          {isAr ? 'غرامة التأخير لكل 15 دقيقة' : 'Late penalty per 15 minutes'}
+                        </label>
+                        <input
+                          type="number"
+                          name="attendance_penalty_per_15min"
+                          value={storeSettings.attendance_penalty_per_15min}
                           onChange={handleStoreSettingsChange}
                           className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
                           step="0.01"
@@ -1079,7 +1101,7 @@ export default function SettingsPage() {
                               <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
                                 {isAr ? 'الهاتف / الواتساب' : 'Phone / WhatsApp'}
                               </label>
-                              <input
+                              <input                              
                                 type="text"
                                 name="phone"
                                 value={branchForm.phone}
@@ -1087,6 +1109,19 @@ export default function SettingsPage() {
                                 className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
                               />
                             </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                                {isAr ? 'غرامة التأخير لكل 15 دقيقة' : 'Late penalty per 15 minutes'}
+                              </label>
+                              <input
+                                type="number"
+                                name="attendance_penalty_per_15min"
+                                value={branchForm.attendance_penalty_per_15min}
+                                onChange={handleBranchChange}
+                                className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                                step="0.01"
+                              />
+                            </div>                            
                             <div className="md:col-span-2">
                               <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
                                 {isAr ? 'العنوان' : 'Address'}

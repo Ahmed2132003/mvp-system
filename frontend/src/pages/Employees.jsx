@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
-import { notifyError } from '../lib/notifications';
+import { notifyError, notifySuccess } from '../lib/notifications';
 import { useAuth } from '../hooks/useAuth';
 import BrandMark from '../components/layout/BrandMark';
 // =====================
@@ -95,6 +95,9 @@ export default function Employees() {
 
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState([]);
+  const [shiftEdits, setShiftEdits] = useState({});
+  const [savingShiftIds, setSavingShiftIds] = useState({});
+  const canManage = user?.is_superuser || ['OWNER', 'MANAGER'].includes(user?.role);
 
   // Apply theme to <html> + persist
   useEffect(() => {
@@ -122,11 +125,20 @@ export default function Employees() {
       const res = await api.get('/employees/');
       const data = Array.isArray(res.data) ? res.data : (res.data.results || []);
       setEmployees(data);
+      setShiftEdits(
+        data.reduce((acc, employee) => {
+          acc[employee.id] = {
+            start: employee.shift_start_time ? String(employee.shift_start_time).slice(0, 5) : '',
+            end: employee.shift_end_time ? String(employee.shift_end_time).slice(0, 5) : '',
+          };
+          return acc;
+        }, {})
+      );
     } catch (err) {
       console.error(err);
       notifyError(isAr ? 'فشل تحميل الموظفين' : 'Failed to load employees');
     } finally {
-      setLoading(false);
+      setLoading(false);      
     }
   };
 
@@ -157,6 +169,32 @@ export default function Employees() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate]);
+
+  const updateShiftField = (id, field, value) => {
+    setShiftEdits((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] || {}), [field]: value },
+    }));
+  };
+
+  const saveShift = async (employeeId) => {
+    if (!employeeId) return;
+    const shift = shiftEdits[employeeId] || {};
+    try {
+      setSavingShiftIds((prev) => ({ ...prev, [employeeId]: true }));
+      await api.patch(`/employees/${employeeId}/`, {
+        shift_start_time: shift.start || null,
+        shift_end_time: shift.end || null,
+      });
+      notifySuccess(isAr ? 'تم حفظ الشفت' : 'Shift saved');
+      await fetchEmployees();
+    } catch (err) {
+      console.error(err);
+      notifyError(isAr ? 'تعذر حفظ الشفت' : 'Failed to save shift');
+    } finally {
+      setSavingShiftIds((prev) => ({ ...prev, [employeeId]: false }));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 dark:text-gray-50">
@@ -328,10 +366,41 @@ export default function Employees() {
                         <p className="text-[11px] text-gray-600 dark:text-gray-300">
                           {isAr ? 'الفرع:' : 'Branch:'} {e.store_name || '—'}
                         </p>
+                        {canManage && (
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            <label className="text-[10px] text-gray-500 dark:text-gray-400">
+                              {isAr ? 'بداية الشفت' : 'Shift start'}
+                              <input
+                                type="time"
+                                value={shiftEdits[e.id]?.start || ''}
+                                onChange={(event) => updateShiftField(e.id, 'start', event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-1 text-xs bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-gray-100"
+                              />
+                            </label>
+                            <label className="text-[10px] text-gray-500 dark:text-gray-400">
+                              {isAr ? 'نهاية الشفت' : 'Shift end'}
+                              <input
+                                type="time"
+                                value={shiftEdits[e.id]?.end || ''}
+                                onChange={(event) => updateShiftField(e.id, 'end', event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-1 text-xs bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-gray-100"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => saveShift(e.id)}
+                              disabled={savingShiftIds[e.id]}
+                              className="col-span-2 text-[11px] px-3 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800 disabled:opacity-60"
+                            >
+                              {savingShiftIds[e.id]
+                                ? (isAr ? 'جارٍ الحفظ...' : 'Saving...')
+                                : (isAr ? 'حفظ الشفت' : 'Save shift')}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
-
                   {/* Table on tablet/desktop */}
                   <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-xs">
@@ -347,10 +416,23 @@ export default function Employees() {
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
                             {isAr ? 'الفرع' : 'Branch'}
                           </th>
+                          {canManage && (
+                            <>
+                              <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                                {isAr ? 'بداية الشفت' : 'Shift start'}
+                              </th>
+                              <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                                {isAr ? 'نهاية الشفت' : 'Shift end'}
+                              </th>
+                              <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
+                                {isAr ? 'حفظ' : 'Save'}
+                              </th>
+                            </>
+                          )}
                           <th className="py-2 px-2 font-semibold text-gray-600 whitespace-nowrap dark:text-gray-200">
                             {isAr ? 'إجراءات' : 'Actions'}
                           </th>
-                        </tr>
+                        </tr>                        
                       </thead>
                       <tbody>
                         {employees.map((e) => (
@@ -368,10 +450,42 @@ export default function Employees() {
                             <td className="py-2 px-2 whitespace-nowrap text-gray-600 dark:text-gray-300">
                               {e.store_name || '—'}
                             </td>
+                            {canManage && (
+                              <>
+                                <td className="py-2 px-2 whitespace-nowrap">
+                                  <input
+                                    type="time"
+                                    value={shiftEdits[e.id]?.start || ''}
+                                    onChange={(event) => updateShiftField(e.id, 'start', event.target.value)}
+                                    className="rounded-lg border border-gray-200 px-2 py-1 text-xs bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-gray-100"
+                                  />
+                                </td>
+                                <td className="py-2 px-2 whitespace-nowrap">
+                                  <input
+                                    type="time"
+                                    value={shiftEdits[e.id]?.end || ''}
+                                    onChange={(event) => updateShiftField(e.id, 'end', event.target.value)}
+                                    className="rounded-lg border border-gray-200 px-2 py-1 text-xs bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-gray-100"
+                                  />
+                                </td>
+                                <td className="py-2 px-2 whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => saveShift(e.id)}
+                                    disabled={savingShiftIds[e.id]}
+                                    className="text-[11px] px-3 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800 disabled:opacity-60"
+                                  >
+                                    {savingShiftIds[e.id]
+                                      ? (isAr ? 'جارٍ الحفظ...' : 'Saving...')
+                                      : (isAr ? 'حفظ' : 'Save')}
+                                  </button>
+                                </td>
+                              </>
+                            )}
                             <td className="py-2 px-2 whitespace-nowrap">
                               <Link
                                 to={`/employees/${e.id}`}
-                                className="text-[11px] px-3 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"
+                                className="text-[11px] px-3 py-1 rounded-full border border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:text-gray-100 dark:hover:bg-slate-800"                                
                               >
                                 {isAr ? 'فتح الملف' : 'Open profile'}
                               </Link>
