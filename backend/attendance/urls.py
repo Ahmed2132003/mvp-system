@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from . import views
 
 router = DefaultRouter()
-router.register(r'logs', views.AttendanceViewSet, basename='attendance')  # غيّرنا prefix
+router.register(r'logs', views.AttendanceLogViewSet, basename='attendance')
 
 urlpatterns = [
     path('check/', views.attendance_check, name='attendance-check'),
