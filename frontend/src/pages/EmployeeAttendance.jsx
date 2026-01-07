@@ -234,6 +234,12 @@ export default function EmployeeAttendance() {
       ? Math.max(0, Number(monthly.projected_net_salary))
       : Math.max(0, salary - attendanceValue - totalPenalties);
   const qrBase64 = qrSession?.qr_base64 || status?.employee?.qr_attendance_base64;
+  const employeeStore = status?.employee?.store;
+  const employeeStoreName = status?.employee?.store_name || employeeStore?.name || '—';
+  const employeeStoreId =
+    status?.employee?.store_id ??
+    employeeStore?.id ??
+    (typeof employeeStore === 'string' || typeof employeeStore === 'number' ? employeeStore : '—');
 
   const fetchMyStatus = useCallback(async () => {
     try {
@@ -603,11 +609,11 @@ export default function EmployeeAttendance() {
                         {status.employee?.name || '—'}
                       </p>
                       <p className="text-xs text-gray-600 mt-1 dark:text-gray-300">
-                        {t('الفرع:', 'Branch:')} {status.employee?.store_name || '—'}{' '}
+                        {t('الفرع:', 'Branch:')} {employeeStoreName}{' '}
                         <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                          (ID: {status.employee?.store || '—'})
+                          (ID: {employeeStoreId})
                         </span>
-                      </p>
+                      </p>                      
                       <p className="text-xs text-gray-600 mt-1 dark:text-gray-300">␊
                         {t('الراتب اليومي:', 'Daily salary:')} {status.employee?.salary || 0}{' '}
                         {t('ج.م', 'EGP')}
