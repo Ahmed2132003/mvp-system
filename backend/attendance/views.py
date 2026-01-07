@@ -1,6 +1,9 @@
+import base64
 import calendar
 from datetime import date
+from io import BytesIO
 
+import qrcode
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.shortcuts import redirect, render
@@ -14,11 +17,22 @@ from .models import AttendanceLink, AttendanceLog, LeaveRequest
 from .serializers import AttendanceLogSerializer
 
 
+def _build_qr_base64(url: str) -> str:
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+    return base64.b64encode(buffer.read()).decode("utf-8")
+
+
 class AttendanceViewSet(viewsets.ModelViewSet):
     queryset = AttendanceLog.objects.all()
     serializer_class = AttendanceLogSerializer
     permission_classes = [IsAuthenticated]
-
+    
     def get_queryset(self):
         """
         أي موظف يشوف سجلات متجره فقط.
@@ -319,14 +333,16 @@ def create_qr_link(request):
     link = AttendanceLink.objects.create(employee=employee, action=action, work_date=timezone.localdate())
 
     url = f"{settings.SITE_URL}/attendance/qr/use/{link.token}/"
+    qr_base64 = _build_qr_base64(url)
     return Response(
         {
             "token": str(link.token),
             "url": url,
+            "qr_base64": qr_base64,
             "action": link.action,
             "work_date": link.work_date,
             "expires_at": link.expires_at,
-        },
+        },        
         status=201,
     )
 

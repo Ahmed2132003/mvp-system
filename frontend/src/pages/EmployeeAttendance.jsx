@@ -221,6 +221,9 @@ export default function EmployeeAttendance() {
 
   const [statusLoading, setStatusLoading] = useState(false);
   const [status, setStatus] = useState(null);
+  const [qrSession, setQrSession] = useState(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState(null);
 
   const monthly = status?.month || {};  
   const salary = Number(status?.employee?.salary) || 0;
@@ -230,7 +233,7 @@ export default function EmployeeAttendance() {
     typeof monthly.projected_net_salary === 'number'
       ? Math.max(0, Number(monthly.projected_net_salary))
       : Math.max(0, salary - attendanceValue - totalPenalties);
-  const qrBase64 = status?.employee?.qr_attendance_base64;
+  const qrBase64 = qrSession?.qr_base64 || status?.employee?.qr_attendance_base64;
 
   const fetchMyStatus = useCallback(async () => {
     try {
@@ -265,10 +268,27 @@ export default function EmployeeAttendance() {
     }
   }, [t]);
 
+  const fetchQrSession = useCallback(async () => {
+    try {
+      setQrLoading(true);
+      setQrError(null);
+      const res = await api.post('/attendance/link/');
+      setQrSession(res.data || null);
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail ||
+        t('تعذر إنشاء QR جديد للحضور.', 'Failed to create a new attendance QR.');
+      setQrError(msg);
+    } finally {
+      setQrLoading(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     fetchMyStatus();
     fetchMyLogs();
-  }, [fetchMyLogs, fetchMyStatus]);
+    fetchQrSession();
+  }, [fetchMyLogs, fetchMyStatus, fetchQrSession]);
 
   const buildResultFromLog = useCallback(
     (log) => {
@@ -745,8 +765,8 @@ export default function EmployeeAttendance() {
                     <div className="text-[11px] text-gray-600 space-y-2 dark:text-gray-300">
                       <p>
                         {t(
-                          'الكود ثابت للموظف، لكن الرابط يتغيّر مع كل مسح ويعمل لمرة واحدة فقط لنفس اليوم.',
-                          'The QR is fixed per employee, but the generated link changes each scan and works once for the same day.'
+                          'الكود يتجدد تلقائيًا عند فتح الصفحة ويولّد رابطًا لمرة واحدة فقط.',
+                          'The QR is regenerated on page open and creates a single-use link only.'
                         )}
                       </p>
                       <p>
@@ -755,16 +775,29 @@ export default function EmployeeAttendance() {
                           'When opened, location permission will be requested automatically to record the action.'
                         )}
                       </p>
+                      {qrSession?.action && (
+                        <p className="font-semibold text-emerald-700 dark:text-emerald-200">
+                          {qrSession.action === 'CHECKIN'
+                            ? t('الرابط الحالي سيسجل حضور.', 'Current link will check in.')
+                            : t('الرابط الحالي سيسجل انصراف.', 'Current link will check out.')}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ) : (
                   <div className="text-xs text-gray-500 border border-dashed border-gray-200 rounded-2xl px-3 py-3 dark:text-gray-400 dark:border-slate-700">
-                    {t('لا يوجد QR متاح لهذا الحساب.', 'No QR is available for this account.')}
+                    {qrLoading
+                      ? t('جاري إنشاء QR جديد...', 'Generating a new QR...')
+                      : t('لا يوجد QR متاح لهذا الحساب.', 'No QR is available for this account.')}
+                  </div>
+                )}
+                {!qrLoading && qrError && (
+                  <div className="mt-3 text-xs text-red-600 dark:text-red-300">
+                    {qrError}
                   </div>
                 )}
               </div>
             </section>
-
             {/* Action + Result */}
             <section className="grid gap-4 lg:grid-cols-2 items-start">              
               {/* Action */}
