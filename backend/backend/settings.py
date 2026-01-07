@@ -155,10 +155,16 @@ REST_FRAMEWORK = {
 }
 
 # CORS
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://nibarcloudsystem.com')
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
+    "http://168.231.80.180",
+    "https://168.231.80.180",
+    "https://nibarcloudsystem.com",
+    FRONTEND_URL,
 ]
 
 extra_cors = config('CORS_ALLOWED_ORIGINS', default='')
@@ -191,7 +197,6 @@ SIMPLE_JWT = {
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_URL = "http://localhost:3000"
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 

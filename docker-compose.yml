@@ -45,7 +45,8 @@ services:
       - SECRET_KEY=dev-secret
       - DATABASE_URL=postgresql://mvp_user:mvp_pass@db:5432/mvp_db
       - CELERY_BROKER_URL=redis://redis:6379/0
-      - SITE_URL=http://localhost:3000
+      - SITE_URL=https://nibarcloudsystem.com
+      - FRONTEND_URL=https://nibarcloudsystem.com      
     depends_on:
       - db
       - redis
