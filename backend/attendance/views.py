@@ -148,7 +148,7 @@ def my_attendance_logs(request):
 
     for log in logs:
         day = log.work_date.day
-        duration = log.duration_minutes
+        duration = log.duration_minutes or 0        
         days_map[day]["logs"].append(
             {
                 "id": log.id,
@@ -249,7 +249,7 @@ def attendance_check(request):
     active_log.check_out = now
     try:
         active_log.full_clean()
-        active_log.save(update_fields=["check_out"])
+        active_log.save(update_fields=["check_out", "duration_minutes"])        
     except ValidationError as exc:
         return Response(
             {
@@ -476,7 +476,7 @@ def qr_use(request):
     active_log.check_out = now
     try:
         active_log.full_clean()
-        active_log.save(update_fields=["check_out"])
+        active_log.save(update_fields=["check_out", "duration_minutes"])        
     except ValidationError as exc:
         return Response(
             {
