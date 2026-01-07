@@ -373,9 +373,9 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             "name": employee.user.name or employee.user.email,
             "store_id": employee.store_id,
             "store_name": employee.store.name if employee.store_id else None,
-            "qr_attendance_base64": getattr(employee, "qr_attendance_base64", None),
+            "qr_attendance_base64": employee.build_attendance_qr_base64(),
         }, status=200)
-
+        
     @action(detail=True, methods=['get'])
     def attendance(self, request, pk=None):
         employee = self.get_object()

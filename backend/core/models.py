@@ -427,7 +427,14 @@ class Employee(models.Model):
 
         return buffer, base64_str, File(buffer)
 
-    def save(self, *args, **kwargs):
+    def attendance_qr_url(self) -> str:
+        return f"{settings.SITE_URL}/attendance/qr/?store={self.store_id}&employee={self.id}"
+
+    def build_attendance_qr_base64(self) -> str:
+        _, base64_str, _ = self._generate_qr_image_and_base64(self.attendance_qr_url())
+        return base64_str
+
+    def save(self, *args, **kwargs):        
         # تأكيد تطابق الفرع مع المتجر قبل الحفظ
         self.full_clean()
 
@@ -437,10 +444,8 @@ class Employee(models.Model):
         if not self.qr_attendance:
             # رابط الـ QR يفتح redirect عام لكنه يحتوي employee + store
             # (مهم جدًا: الموظف بيفتحه من داخل التطبيق + JWT يسجل الحضور)
-            attendance_url = f"{settings.SITE_URL}/attendance/qr/?store={self.store_id}&employee={self.id}"
-
-            buffer, b64, file_obj = self._generate_qr_image_and_base64(attendance_url)
-
+            buffer, b64, file_obj = self._generate_qr_image_and_base64(self.attendance_qr_url())
+            
             filename = f"qr_employee_attendance_{self.id}.png"
             self.qr_attendance.save(filename, file_obj, save=False)
 

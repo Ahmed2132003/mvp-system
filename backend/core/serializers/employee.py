@@ -28,8 +28,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
     # ✅ NEW: QR attendance الموحد من store
     store_qr_attendance_base64 = serializers.CharField(source="store.qr_attendance_base64", read_only=True)
     store_qr_attendance_url = serializers.SerializerMethodField()
-    # ✅ Per-employee QR (ثابت لكن الرابط متغيّر عبر السيرفر)
-    qr_attendance_base64 = serializers.CharField(read_only=True)
+    # ✅ Per-employee QR (ثابت لكن الرابط متغيّر عبر السيرفر)␊
+    qr_attendance_base64 = serializers.SerializerMethodField()    
     qr_code_attendance_base64 = serializers.CharField(source="qr_attendance_base64", read_only=True)
     qr_attendance_url = serializers.SerializerMethodField()
     
@@ -113,10 +113,16 @@ class EmployeeSerializer(serializers.ModelSerializer):
             return f"{settings.SITE_URL}{obj.store.qr_attendance.url}"
         return None
 
+    def get_qr_attendance_base64(self, obj):
+        try:
+            return obj.build_attendance_qr_base64()
+        except Exception:
+            return getattr(obj, "qr_attendance_base64", None)
+
     def get_qr_attendance_url(self, obj):
         if obj.qr_attendance:
             return f"{settings.SITE_URL}{obj.qr_attendance.url}"
         return None
-
+    
     def get_is_present(self, obj):
         return AttendanceLog.objects.filter(employee=obj, check_out__isnull=True).exists()

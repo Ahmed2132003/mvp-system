@@ -234,9 +234,9 @@ def my_attendance_status(request):
                 "store": employee.store_id,                
                 "store_name": getattr(employee.store, "name", None),
                 "salary": employee.salary,
-                "qr_attendance_base64": getattr(employee, "qr_attendance_base64", None),
+                "qr_attendance_base64": employee.build_attendance_qr_base64(),
                 "qr_attendance_url": getattr(employee, "qr_attendance", None).url if getattr(employee, "qr_attendance", None) else None,
-            },                                  
+            },                                                                         
             "shift": {
                 "start": getattr(store_settings, "attendance_shift_start", None),
                 "grace_minutes": getattr(store_settings, "attendance_grace_minutes", None),
