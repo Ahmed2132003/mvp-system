@@ -347,7 +347,9 @@ def test_expense_summary_daily_attendance_only(expense_setup):
     assert payload["late_penalties_total"] == 0.0
     assert payload["payroll_total"] == 100.0  # 1 day * 100
     assert payload["purchase_total"] == 0.0
-    assert payload["total_expense"] == 100.0
+    assert payload["purchase_tax"] == 0.0
+    assert payload["tax_rate"] == 14.0
+    assert payload["total_expense"] == 100.0    
     assert payload["period_type"] == "day"
     assert payload["period_value"] == target_date.date().isoformat()
 
@@ -397,8 +399,9 @@ def test_expense_summary_monthly_attendance_and_purchases(expense_setup):
     assert payload["late_penalties_total"] == 0.0
     assert payload["payroll_total"] == 200.0
     assert payload["purchase_total"] == 250.0  # 10 * cost_price 25
-    assert payload["total_expense"] == 450.0
-
+    assert payload["purchase_tax"] == 35.0  # 14% default tax
+    assert payload["tax_rate"] == 14.0
+    assert payload["total_expense"] == 485.0
 
 @pytest.mark.django_db
 def test_expense_summary_includes_adjustments(expense_setup):
@@ -435,10 +438,11 @@ def test_expense_summary_includes_adjustments(expense_setup):
     assert payload["advances_total"] == 10.0
     assert payload["late_penalties_total"] == 15.0
     assert payload["payroll_total"] == 200.0  # 200 + 30 - 5 - 10 - 15
-    assert payload["purchase_total"] == 0.0
-    assert payload["total_expense"] == 200.0
-
-
+    assert payload["purchase_total"] == 250.0  # 10 * cost_price 25
+    assert payload["purchase_tax"] == 35.0  # 14% default tax
+    assert payload["tax_rate"] == 14.0
+    assert payload["total_expense"] == 485.0
+    
 @pytest.mark.django_db
 def test_inventory_value_report_respects_sales_deductions(reporting_setup):
     client = reporting_setup["client"]

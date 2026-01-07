@@ -1,5 +1,6 @@
 # backend/orders/models.py
 from django.db import models
+from decimal import Decimal, ROUND_HALF_UP
 import qrcode
 from io import BytesIO
 from django.core.files import File
@@ -195,10 +196,13 @@ class Order(models.Model):
 
     customer_name = models.CharField(max_length=255, blank=True, null=True)    
     customer_phone = models.CharField(max_length=20, blank=True, null=True)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
+    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(auto_now=True)    
     notes = models.TextField(blank=True, null=True)
     objects = OrderManager()
 
@@ -206,10 +210,24 @@ class Order(models.Model):
         return f"Order #{self.id} - {self.total} EGP"
 
     def update_total(self):
-        total = sum(item.subtotal for item in self.items.all())
-        self.total = total
-        self.save(update_fields=['total'])
+        from core.models import StoreSettings
 
+        subtotal = sum((item.subtotal for item in self.items.all()), Decimal("0"))
+
+        try:
+            tax_rate = Decimal(self.store.settings.tax_rate)
+        except StoreSettings.DoesNotExist:
+            tax_rate = Decimal("0")
+
+        tax_amount = (subtotal * tax_rate / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        total = (subtotal + tax_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        self.subtotal = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        self.tax_rate = tax_rate.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        self.tax_amount = tax_amount
+        self.total = total
+        self.save(update_fields=['subtotal', 'tax_rate', 'tax_amount', 'total'])
+        
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         super().save(*args, **kwargs)
@@ -262,11 +280,14 @@ class Invoice(models.Model):
     store = models.ForeignKey('core.Store', on_delete=models.CASCADE, related_name='invoices')
     branch = models.ForeignKey('branches.Branch', on_delete=models.SET_NULL, null=True, blank=True, related_name='invoices')
     invoice_number = models.CharField(max_length=64, unique=True)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     customer_name = models.CharField(max_length=255, blank=True, null=True)
     customer_phone = models.CharField(max_length=20, blank=True, null=True)
     order_type = models.CharField(max_length=20, choices=Order.ORDER_TYPE_CHOICES)
     delivery_address = models.TextField(blank=True, null=True)
-    notes = models.TextField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)    
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 

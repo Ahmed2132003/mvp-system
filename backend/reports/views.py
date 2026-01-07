@@ -230,7 +230,9 @@ def sales_report(request):
             qs = qs.filter(branch_id=branch_id)
 
         # --- Summary ---
-        total_sales = qs.aggregate(total=Sum('total'))['total'] or 0
+        totals = qs.aggregate(total=Sum('total'), tax_total=Sum('tax_amount'))
+        total_sales = totals.get('total') or 0
+        tax_total = totals.get('tax_total') or 0        
         total_orders = qs.count()
         avg_ticket = (total_sales / total_orders) if total_orders else 0
 
@@ -307,6 +309,7 @@ def sales_report(request):
                 "from": from_date.isoformat() if from_date else None,
                 "to": to_date.isoformat() if to_date else None,
                 "total_sales": float(total_sales or 0),
+                "total_tax": float(tax_total or 0),
                 "total_orders": total_orders,
                 "avg_ticket": float(avg_ticket or 0),
             },
@@ -324,6 +327,7 @@ def sales_report(request):
                 "from": None,
                 "to": None,
                 "total_sales": 0.0,
+                "total_tax": 0.0,
                 "total_orders": 0,
                 "avg_ticket": 0.0,
             },
@@ -821,8 +825,15 @@ def expense_summary(request):
             
         purchase_total = purchase_qs.aggregate(total=Sum("cost"))["total"] or Decimal("0")
 
-        total_expense = payroll_total + purchase_total
+        try:
+            tax_rate = Decimal(store.settings.tax_rate)
+        except Exception:
+            tax_rate = Decimal("0")
 
+        purchase_tax = (purchase_total * tax_rate / Decimal("100")).quantize(Decimal("0.01"))
+
+        total_expense = payroll_total + purchase_total + purchase_tax
+        
         return Response(
             {
                 "period_type": period_type,
@@ -834,6 +845,8 @@ def expense_summary(request):
                 "late_penalties_total": float(late_penalties_total),
                 "payroll_total": float(payroll_total),
                 "purchase_total": float(purchase_total),
+                "purchase_tax": float(purchase_tax),
+                "tax_rate": float(tax_rate),
                 "total_expense": float(total_expense),
             }
         )
@@ -850,6 +863,8 @@ def expense_summary(request):
                 "late_penalties_total": 0.0,
                 "payroll_total": 0.0,
                 "purchase_total": 0.0,
+                "purchase_tax": 0.0,
+                "tax_rate": 0.0,
                 "total_expense": 0.0,
             }
         )
@@ -1096,6 +1111,13 @@ def api_accounting(request):
         purchase_cost_total = purchase_totals.get("cost_total") or Decimal("0")
         purchase_sale_total = purchase_totals.get("sale_total") or Decimal("0")
 
+        try:
+            tax_rate = Decimal(store.settings.tax_rate)
+        except Exception:
+            tax_rate = Decimal("0")
+
+        purchase_tax_total = (purchase_cost_total * tax_rate / Decimal("100")).quantize(Decimal("0.01"))
+
         paid_filter = Q(status="PAID") | Q(is_paid=True)
         orders_qs = Order.objects.filter(paid_filter, **order_filter)
         if store:
@@ -1103,9 +1125,16 @@ def api_accounting(request):
         if branch:
             orders_qs = orders_qs.filter(branch=branch)
 
-        total_sales = orders_qs.aggregate(total=Sum("total"))["total"] or Decimal("0")
+        try:
+            tax_rate = Decimal(store.settings.tax_rate)
+        except Exception:
+            tax_rate = Decimal("0")
 
-        total_expenses = payroll_total + purchase_cost_total
+        purchase_tax_total = (purchase_cost_total * tax_rate / Decimal("100")).quantize(Decimal("0.01"))
+        sales_totals = orders_qs.aggregate(total=Sum("total"), tax_total=Sum("tax_amount"))
+        total_sales = sales_totals.get("total") or Decimal("0")
+        total_sales_tax = sales_totals.get("tax_total") or Decimal("0")
+        total_expenses = payroll_total + purchase_cost_total + purchase_tax_total        
         net_profit = total_sales - total_expenses
 
         return Response(
@@ -1125,13 +1154,17 @@ def api_accounting(request):
                 "inventory": {
                     "purchase_cost_total": float(purchase_cost_total),
                     "purchase_sale_value_total": float(purchase_sale_total),
+                    "purchase_tax_total": float(purchase_tax_total),
                 },
                 "sales": {
                     "total_sales": float(total_sales),
+                    "total_tax": float(total_sales_tax or 0),
                 },
+                "tax_rate": float(tax_rate),
                 "expenses": {
                     "payroll": float(payroll_total),
                     "purchases": float(purchase_cost_total),
+                    "purchase_tax": float(purchase_tax_total),
                     "bonuses": float(bonuses_total),
                     "advances": float(advances_total),
                     "penalties": float(penalties_total),
@@ -1169,11 +1202,14 @@ def api_accounting(request):
                 "inventory": {
                     "purchase_cost_total": 0.0,
                     "purchase_sale_value_total": 0.0,
+                    "purchase_tax_total": 0.0,
                 },
-                "sales": {"total_sales": 0.0},
+                "sales": {"total_sales": 0.0, "total_tax": 0.0},
+                "tax_rate": 0.0,                
                 "expenses": {
                     "payroll": 0.0,
                     "purchases": 0.0,
+                    "purchase_tax": 0.0,
                     "bonuses": 0.0,
                     "advances": 0.0,
                     "penalties": 0.0,

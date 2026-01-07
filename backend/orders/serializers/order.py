@@ -19,12 +19,11 @@ class OrderSerializer(serializers.ModelSerializer):
             'id', 'store', 'branch', 'branch_name', 'table', 'table_number',            
             'customer_name', 'customer_phone',
             'order_type', 'payment_method', 'is_paid', 'delivery_address',   # ✅
-            'total', 'status', 'created_at',
+            'subtotal', 'tax_rate', 'tax_amount', 'total', 'status', 'created_at',
             'updated_at', 'notes', 'items', 'items_write', 'payments',
             'invoice_number',
         ]
-        read_only_fields = ['total', 'created_at', 'updated_at', 'store', 'branch', 'invoice_number']
-                
+        read_only_fields = ['subtotal', 'tax_rate', 'tax_amount', 'total', 'created_at', 'updated_at', 'store', 'branch', 'invoice_number']                
     def validate(self, data):
         order_type = data.get('order_type', 'IN_STORE')
         delivery_address = data.get('delivery_address')

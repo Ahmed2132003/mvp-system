@@ -27,12 +27,14 @@ export const buildInvoiceHtml = (invoice, isAr = false) => {
 
   const metaLines = [
     invoice.store_name && `${isAr ? 'المتجر' : 'Store'}: ${invoice.store_name}`,
+    invoice.store_address && `${isAr ? 'العنوان' : 'Address'}: ${invoice.store_address}`,
+    invoice.store_phone && `${isAr ? 'التليفون' : 'Phone'}: ${invoice.store_phone}`,
     invoice.branch_name && `${isAr ? 'الفرع' : 'Branch'}: ${invoice.branch_name}`,
     invoice.table_number && `${isAr ? 'الطاولة' : 'Table'}: ${invoice.table_number}`,
     invoice.customer_name && `${isAr ? 'العميل' : 'Customer'}: ${invoice.customer_name}`,
     invoice.customer_phone && `${isAr ? 'الهاتف' : 'Phone'}: ${invoice.customer_phone}`,
     invoice.delivery_address && `${isAr ? 'العنوان' : 'Address'}: ${invoice.delivery_address}`,
-    invoice.notes && `${isAr ? 'ملاحظات' : 'Notes'}: ${invoice.notes}`,
+    invoice.notes && `${isAr ? 'ملاحظات' : 'Notes'}: ${invoice.notes}`,    
   ]
     .filter(Boolean)
     .map((line) => `<div style="margin-bottom:4px;">${line}</div>`)
@@ -73,9 +75,19 @@ export const buildInvoiceHtml = (invoice, isAr = false) => {
           </table>
 
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-weight:700;">
-            <span>${isAr ? 'الإجمالي المستحق' : 'Amount due'}</span>
-            <span>${formatCurrency(invoice.total, isAr)} ${isAr ? 'ج.م' : 'EGP'}</span>
-          </div>
+            <div>
+              <div style="font-weight:600;color:#0f172a;">${isAr ? 'صافي الأصناف' : 'Subtotal'}</div>
+              <div style="font-size:12px;color:#475569;">${formatCurrency(invoice.subtotal, isAr)} ${isAr ? 'ج.م' : 'EGP'}</div>
+            </div>
+            <div style="text-align:${isAr ? 'left' : 'right'};">
+              <div style="font-weight:600;color:#0f172a;">${isAr ? 'الضريبة' : 'Tax'} (${Number(invoice.tax_rate || 0).toFixed(2)}%)</div>
+              <div style="font-size:12px;color:#475569;">${formatCurrency(invoice.tax_amount, isAr)} ${isAr ? 'ج.م' : 'EGP'}</div>
+            </div>
+            <div style="text-align:${isAr ? 'left' : 'right'};">
+              <div style="font-weight:700;color:#0f172a;">${isAr ? 'الإجمالي المستحق' : 'Amount due'}</div>
+              <div style="font-size:13px;color:#1f2937;">${formatCurrency(invoice.total, isAr)} ${isAr ? 'ج.م' : 'EGP'}</div>
+            </div>
+          </div>          
         </div>
       </body>
     </html>
