@@ -89,13 +89,13 @@ def my_attendance_status(request):
     data = {
         "employee": {
             "id": employee.id,
-            "name": employee.name,
+            "name": employee.user.name or employee.user.email,
             "store": {
                 "id": employee.store_id,
                 "name": getattr(employee.store, "name", None),
             },
             "qr_attendance_base64": getattr(employee, "qr_attendance_base64", None),
-        },
+        },        
         "today": {
             "date": today,
             "active_log_id": active_log.id if active_log else None,
