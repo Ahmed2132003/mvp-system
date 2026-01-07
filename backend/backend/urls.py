@@ -5,14 +5,11 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
-from rest_framework_simplejwt.views import (
-    TokenRefreshView,
-    TokenVerifyView,
-)
+from rest_framework_simplejwt.views import TokenVerifyView
 
 # استيراد LogoutView من core
 from core.views import LogoutView
-from core.auth_views import SubscriptionTokenObtainPairView
+from core.auth_views import SubscriptionTokenObtainPairView, SafeTokenRefreshView
 from attendance import views as attendance_views
 
 # استيراد كل الـ ViewSets عشان الـ router
@@ -53,7 +50,7 @@ urlpatterns = [
 
     # JWT Authentication
     path('api/v1/auth/login/', SubscriptionTokenObtainPairView.as_view(), name='token_obtain_pair'),    
-    path('api/v1/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/v1/auth/refresh/', SafeTokenRefreshView.as_view(), name='token_refresh'),    
     path('api/v1/auth/verify/', TokenVerifyView.as_view(), name='token_verify'),
     path('api/v1/auth/logout/', LogoutView.as_view(), name='auth_logout'),
 
