@@ -185,10 +185,10 @@ class AttendanceLog(models.Model):
         if (not self.work_date) and self.check_in:
             self.work_date = timezone.localtime(self.check_in).date()
 
-        # First-time check-in => calculate late
-        if self.check_in and not self.pk:
+        # Calculate late/penalty when check-in is set (on create or first update)
+        if self.check_in and (not self.pk or self.late_minutes is None):
             self._calc_late_and_penalty()
-
+            
         # Compute duration
         if self.check_out and self.check_in:
             delta = self.check_out - self.check_in
