@@ -4,13 +4,16 @@ from rest_framework.exceptions import PermissionDenied
 from core.models import Store, Employee
 from branches.models import Branch
 
-def get_user_default_store(user):    
+def get_user_default_store(user):
     """
     Default store:
     - superuser: أول Store
     - staff/manager: employee.store
     - owner: أول store يملكه
     """
+    if not user or not getattr(user, "is_authenticated", False):
+        return None
+
     if user.is_superuser:
         return Store.objects.order_by("id").first()
 
@@ -18,18 +21,17 @@ def get_user_default_store(user):
         emp = user.employee
         if emp and emp.store_id:
             return emp.store
-    except Employee.DoesNotExist:
+    except (AttributeError, Employee.DoesNotExist):
         pass
-
+    
     return Store.objects.filter(owner=user).order_by("id").first()
 
 
 def get_employee_branch(user):
     try:
         return user.employee.branch
-    except Employee.DoesNotExist:
+    except (AttributeError, Employee.DoesNotExist):
         return None
-
 
 def user_can_access_branch(user, branch: Branch) -> bool:
     if not branch:
@@ -65,9 +67,8 @@ def user_can_access_store(user, store: Store) -> bool:
     try:
         emp = user.employee
         return emp.store_id == store.id
-    except Employee.DoesNotExist:
+    except (AttributeError, Employee.DoesNotExist):
         return False
-
 
 def get_store_from_request(request):    
     """
@@ -79,7 +80,7 @@ def get_store_from_request(request):
         store = Store.objects.filter(id=store_id).first()
         if not store:
             return None
-        if not user_can_access_store(request.user, store):
+        if not user_can_access_store(request.user, store):            
             raise PermissionDenied("لا تملك صلاحية الوصول لهذا الفرع.")
         return store
 

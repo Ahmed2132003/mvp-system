@@ -1,5 +1,6 @@
 from rest_framework import permissions
 
+from core.models import Employee
 
 class IsSuperUser(permissions.BasePermission):
     """سوبر يوزر Django الحقيقي فقط"""
@@ -70,9 +71,8 @@ class IsStaff(permissions.BasePermission):
             return False
         try:
             return request.user.employee.store is not None
-        except AttributeError:
+        except (AttributeError, Employee.DoesNotExist):
             return False
-
 
 class IsOwnerOfStore(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
@@ -107,21 +107,21 @@ class IsEmployeeOfStore(permissions.BasePermission):
         
         try:
             return request.user.employee.store is not None
-        except AttributeError:
+        except (AttributeError, Employee.DoesNotExist):
             return False
-
+        
     def has_object_permission(self, request, view, obj):
         if request.user.is_superuser:
             return True
 
         try:
             user_store = request.user.employee.store
-        except AttributeError:
+        except (AttributeError, Employee.DoesNotExist):
             role = getattr(request.user, 'role', None)
             if role == 'OWNER':                
                 return True
             return False
-
+        
         if hasattr(obj, 'store') and obj.store:
             return obj.store == user_store
 

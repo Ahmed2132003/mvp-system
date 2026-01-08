@@ -1,3 +1,24 @@
+ELAHLYclub@1907
+Nibarcloud@2026
+git add .
+git commit -m "update"
+git push 
+ahmedibrahim01122232957@gmail.com
+cd /var/www/mvp-system
+git pull
+cd backend
+source venv/bin/activate
+pip install -r requirements.txt       
+python manage.py migrate               
+python manage.py collectstatic --noinput
+systemctl restart mvp_gunicorn mvp_daphne
+cd ../frontend
+npm install                            
+npm run build
+ssh root@168.231.80.180
+systemctl status mvp_daphne
+journalctl -u mvp_daphne -n 50
+
 # ------------------------------
 # Django Backend Commands
 # ------------------------------

@@ -13,6 +13,7 @@ from core.utils.store_context import get_store_from_request, get_branch_from_req
 from django.db import transaction
 from django.db.models import F
 
+from core.models import Employee
 
 class CategoryViewSet(viewsets.ModelViewSet):    
     serializer_class = CategorySerializer
@@ -44,12 +45,16 @@ class CategoryViewSet(viewsets.ModelViewSet):
         qs = qs.filter(store=store)
 
         # لو اليوزر ليه employee و store
-        if hasattr(user, 'employee') and getattr(user.employee, 'store', None):
-            qs = qs.filter(store=user.employee.store)
-        elif role != 'OWNER':
-            # لا Owner ولا ليه store → مفروض ما يشوفش حاجة
-            return Category.objects.none()
-
+        try:
+            if user.employee and getattr(user.employee, 'store', None):
+                qs = qs.filter(store=user.employee.store)
+            elif role != 'OWNER':
+                # لا Owner ولا ليه store → مفروض ما يشوفش حاجة
+                return Category.objects.none()
+        except (AttributeError, Employee.DoesNotExist):
+            if role != 'OWNER':
+                return Category.objects.none()
+            
         # نضيف عدد الأصناف في كل كاتيجوري
         return qs.annotate(items_count=Count('items'))
 
@@ -84,11 +89,15 @@ class ItemViewSet(viewsets.ModelViewSet):
         
         qs = Item.objects.all()
 
-        if hasattr(user, 'employee') and getattr(user.employee, 'store', None):
-            qs = qs.filter(store=user.employee.store)
-        elif role != 'OWNER':
-            return Item.objects.none()
-
+        try:
+            if user.employee and getattr(user.employee, 'store', None):
+                qs = qs.filter(store=user.employee.store)
+            elif role != 'OWNER':
+                return Item.objects.none()
+        except (AttributeError, Employee.DoesNotExist):
+            if role != 'OWNER':
+                return Item.objects.none()
+            
         return qs
 
     def perform_create(self, serializer):
