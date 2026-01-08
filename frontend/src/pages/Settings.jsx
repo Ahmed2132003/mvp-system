@@ -357,8 +357,21 @@ export default function SettingsPage() {
       setSavingStoreSettings(true);
       setError(null);
 
-      await api.patch('/store-settings/current/', { ...storeSettings });
+      const payload = {
+        ...storeSettings,
+        tax_rate: storeSettings.tax_rate === '' ? 0 : Number(storeSettings.tax_rate),
+        service_charge: storeSettings.service_charge === '' ? 0 : Number(storeSettings.service_charge),
+        attendance_penalty_per_15min:
+          storeSettings.attendance_penalty_per_15min === ''
+            ? 0
+            : Number(storeSettings.attendance_penalty_per_15min),
+        printer_ip: storeSettings.printer_ip === '' ? null : storeSettings.printer_ip,
+        printer_port:
+          storeSettings.printer_port === '' ? null : Number(storeSettings.printer_port),
+      };
 
+      await api.patch('/store-settings/current/', payload);
+      
       showSuccess(isAr ? 'تم حفظ إعدادات الفرع بنجاح.' : 'Store settings saved successfully.');
       await fetchAll();
     } catch (err) {
