@@ -170,10 +170,6 @@ export default function StoreMenu() {
   }, [storeId, fetchMenu, selectedBranchId]);
 
   useEffect(() => {
-    loadPersistedOrder();
-  }, [loadPersistedOrder]);
-
-  useEffect(() => {
     const resumeAudio = () => {
       if (audioContextRef.current?.state === 'suspended') {
         audioContextRef.current.resume();
@@ -571,10 +567,14 @@ export default function StoreMenu() {
     }
   }, [loadInvoice, orderStorageKey]);
 
+  useEffect(() => {
+    loadPersistedOrder();
+  }, [loadPersistedOrder]);
+
   const playTone = useCallback((frequency = 880) => {
     try {
       if (!audioContextRef.current) {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;        
         if (!AudioCtx) return;
         audioContextRef.current = new AudioCtx();
       }
