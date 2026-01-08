@@ -24,3 +24,4 @@ whitenoise>=6.7.0
 gunicorn
 dj-database-url
 daphne
+uvicorn
