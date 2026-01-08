@@ -12,6 +12,7 @@ from .utils import update_inventory_for_order
 from django.core.exceptions import ValidationError
 import base64
 from django.core.mail import EmailMessage, get_connection
+import logging
 
 class TableQuerySet(models.QuerySet):
     def at_branch(self, branch):
@@ -450,13 +451,20 @@ def notify_customer_on_status_change(sender, instance: Order, created, **kwargs)
     if not instance.customer_email:
         return
 
+    logger = logging.getLogger(__name__)
     store_settings = getattr(instance.store, "settings", None)
-    if not store_settings:
-        return
+    email_user = getattr(store_settings, "notification_email", None) if store_settings else None
+    email_password = (
+        getattr(store_settings, "notification_email_password", None) if store_settings else None
+    )
 
-    if not store_settings.notification_email or not store_settings.notification_email_password:
-        return
+    if not email_user or not email_password:
+        email_user = getattr(settings, "EMAIL_HOST_USER", None)
+        email_password = getattr(settings, "EMAIL_HOST_PASSWORD", None)
 
+    if not email_user or not email_password:
+        return
+    
     status_map = {
         "PENDING": "جديد",
         "PREPARING": "قيد التحضير",
@@ -478,17 +486,18 @@ def notify_customer_on_status_change(sender, instance: Order, created, **kwargs)
 
     try:
         connection = get_connection(
-            username=store_settings.notification_email,
-            password=store_settings.notification_email_password,
+            username=email_user,
+            password=email_password,
             fail_silently=False,
         )
         message = EmailMessage(
             subject=subject,
             body=body,
-            from_email=store_settings.notification_email,
+            from_email=email_user,
             to=[instance.customer_email],
             connection=connection,
         )
         message.send(fail_silently=False)
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to send order status email: %s", exc)
         return
