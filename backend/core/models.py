@@ -328,7 +328,10 @@ class StoreSettings(models.Model):
     printer_ip = models.GenericIPAddressField("IP الطابعة", null=True, blank=True)
     printer_port = models.PositiveIntegerField("Port الطابعة", null=True, blank=True)
 
-    # ✅ NEW: إعدادات الشفت والتأخير للحضور (مرحلة أولى)
+    notification_email = models.EmailField("بريد الإشعارات", max_length=254, null=True, blank=True)
+    notification_email_password = models.CharField("App Password للإيميل", max_length=255, null=True, blank=True)
+
+    # ✅ NEW: إعدادات الشفت والتأخير للحضور (مرحلة أولى)    
     attendance_shift_start = models.TimeField("بداية الشفت", default=timezone.datetime(2000, 1, 1, 9, 0).time())
     attendance_grace_minutes = models.PositiveIntegerField("سماحية التأخير بالدقائق", default=30)
     attendance_penalty_per_15min = models.DecimalField("غرامة كل 15 دقيقة", max_digits=8, decimal_places=2, default=50.00)

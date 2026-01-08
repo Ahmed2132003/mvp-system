@@ -11,6 +11,7 @@ from django.dispatch import receiver
 from .utils import update_inventory_for_order
 from django.core.exceptions import ValidationError
 import base64
+from django.core.mail import EmailMessage, get_connection
 
 class TableQuerySet(models.QuerySet):
     def at_branch(self, branch):
@@ -196,7 +197,8 @@ class Order(models.Model):
 
     customer_name = models.CharField(max_length=255, blank=True, null=True)    
     customer_phone = models.CharField(max_length=20, blank=True, null=True)
-    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    customer_email = models.EmailField(max_length=254, blank=True, null=True)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)    
     tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0.00)
     tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -348,7 +350,9 @@ def prepare_inventory_change(sender, instance, **kwargs):
 
     old_status = old.status
     new_status = instance.status
-
+    instance._previous_status = old_status
+    instance._status_changed = old_status != new_status
+    
     # لو اتحولت الحالة لـ PAID نسجل الدفع بدون ما نخرج من دورة الـ KDS
     if new_status == 'PAID' and not instance.is_paid:
         instance.is_paid = True
@@ -423,7 +427,7 @@ def notify_kds_on_order_change(sender, instance: Order, created, **kwargs):
 
 
 @receiver(post_save, sender=Order)
-def ensure_invoice_exists(sender, instance: Order, **kwargs):
+def ensure_invoice_exists(sender, instance: Order, **kwargs):  
     """
     تأكد من إنشاء فاتورة لكل طلب وتحديث بياناتها الأساسية.
     """
@@ -433,3 +437,58 @@ def ensure_invoice_exists(sender, instance: Order, **kwargs):
         return
 
     ensure_invoice_for_order(instance)
+
+
+@receiver(post_save, sender=Order)
+def notify_customer_on_status_change(sender, instance: Order, created, **kwargs):
+    if created:
+        return
+
+    if not getattr(instance, "_status_changed", False):
+        return
+
+    if not instance.customer_email:
+        return
+
+    store_settings = getattr(instance.store, "settings", None)
+    if not store_settings:
+        return
+
+    if not store_settings.notification_email or not store_settings.notification_email_password:
+        return
+
+    status_map = {
+        "PENDING": "جديد",
+        "PREPARING": "قيد التحضير",
+        "READY": "جاهز",
+        "SERVED": "تم التقديم",
+        "PAID": "مدفوع",
+        "CANCELLED": "ملغي",
+    }
+    status_label = status_map.get(instance.status, instance.status)
+    store_name = instance.store.name or "المطعم"
+
+    subject = f"تحديث حالة الطلب #{instance.id}"
+    body = (
+        f"مرحبًا{(' ' + instance.customer_name) if instance.customer_name else ''},\n\n"
+        f"تم تحديث حالة طلبك رقم #{instance.id} في {store_name}.\n"
+        f"الحالة الحالية: {status_label}.\n\n"
+        "شكرًا لتعاملك معنا."
+    )
+
+    try:
+        connection = get_connection(
+            username=store_settings.notification_email,
+            password=store_settings.notification_email_password,
+            fail_silently=False,
+        )
+        message = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=store_settings.notification_email,
+            to=[instance.customer_email],
+            connection=connection,
+        )
+        message.send(fail_silently=False)
+    except Exception:
+        return

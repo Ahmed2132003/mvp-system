@@ -17,7 +17,7 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'store', 'branch', 'branch_name', 'table', 'table_number',            
-            'customer_name', 'customer_phone',
+            'customer_name', 'customer_phone', 'customer_email',            
             'order_type', 'payment_method', 'is_paid', 'delivery_address',   # ✅
             'subtotal', 'tax_rate', 'tax_amount', 'total', 'status', 'created_at',
             'updated_at', 'notes', 'items', 'items_write', 'payments',

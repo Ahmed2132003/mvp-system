@@ -318,12 +318,16 @@ class StoreSettingsAdmin(admin.ModelAdmin):
         ("إعدادات الطابعة", {
             "fields": ("printer_ip", "printer_port")
         }),
+        ("إعدادات البريد للعملاء", {
+            "fields": ("notification_email", "notification_email_password"),
+            "classes": ("collapse",)
+        }),
         ("إعدادات الحضور", {
             "fields": ("attendance_shift_start", "attendance_grace_minutes", "attendance_penalty_per_15min"),
             "classes": ("collapse",)
         }),
     )
-
+    
     def has_add_permission(self, request):
         return False
 

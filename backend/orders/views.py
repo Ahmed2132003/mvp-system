@@ -496,7 +496,8 @@ class PublicTableOrderCreateView(APIView):
 
         customer_name = request.data.get("customer_name") or None
         customer_phone = request.data.get("customer_phone") or None
-        notes = request.data.get("notes") or ""
+        customer_email = request.data.get("customer_email") or None
+        notes = request.data.get("notes") or ""        
         order_type = request.data.get("order_type", "IN_STORE")
         payment_method = request.data.get("payment_method", "CASH")
         delivery_address = request.data.get("delivery_address") or None
@@ -520,13 +521,14 @@ class PublicTableOrderCreateView(APIView):
                 table=table,
                 customer_name=customer_name,
                 customer_phone=customer_phone,
+                customer_email=customer_email,
                 notes=notes,
                 order_type=order_type,
                 payment_method=payment_method,
                 delivery_address=delivery_address,
                 status="PENDING",
             )
-            
+                        
             for row in items_data:
                 item_id = row.get("item")
                 quantity = int(row.get("quantity", 1))
@@ -732,7 +734,8 @@ class PublicStoreOrderCreateView(APIView):
 
         customer_name = request.data.get("customer_name") or None
         customer_phone = request.data.get("customer_phone") or None
-        notes = request.data.get("notes") or ""
+        customer_email = request.data.get("customer_email") or None
+        notes = request.data.get("notes") or ""        
         order_type = request.data.get("order_type", "IN_STORE")
         payment_method = request.data.get("payment_method", "CASH")
         delivery_address = request.data.get("delivery_address") or None
@@ -758,11 +761,12 @@ class PublicStoreOrderCreateView(APIView):
                 table=None,
                 customer_name=customer_name,
                 customer_phone=customer_phone,
+                customer_email=customer_email,
                 notes=notes,
                 order_type=order_type,
                 payment_method=payment_method,
                 delivery_address=delivery_address,
-                status="PENDING",
+                status="PENDING",                
             )
 
             for row in items_data:

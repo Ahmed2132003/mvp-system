@@ -65,6 +65,7 @@ export default function StoreMenu() {
 
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
   const [notes, setNotes] = useState('');
 
   const [orderType, setOrderType] = useState('IN_STORE'); // IN_STORE | DELIVERY
@@ -95,7 +96,14 @@ export default function StoreMenu() {
   const [activeOrderId, setActiveOrderId] = useState(null);  
   const wsRef = useRef(null);
   const lastAnnouncedStatusRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const expiryTimeoutRef = useRef(null);
 
+  const ORDER_STORAGE_TTL_MS = 60 * 60 * 1000;
+  const orderStorageKey = useMemo(
+    () => (storeId ? `customer_order_store_${storeId}` : 'customer_order_store'),
+    [storeId]
+  );
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const branchParam = params.get('branch');
@@ -160,6 +168,28 @@ export default function StoreMenu() {
   useEffect(() => {
     if (storeId) fetchMenu(selectedBranchId);
   }, [storeId, fetchMenu, selectedBranchId]);
+
+  useEffect(() => {
+    loadPersistedOrder();
+  }, [loadPersistedOrder]);
+
+  useEffect(() => {
+    const resumeAudio = () => {
+      if (audioContextRef.current?.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+    };
+    window.addEventListener('pointerdown', resumeAudio, { once: true });
+    return () => window.removeEventListener('pointerdown', resumeAudio);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (expiryTimeoutRef.current) {
+        clearTimeout(expiryTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const reservationIso = useMemo(
     () => (tableFilters.datetime ? new Date(tableFilters.datetime).toISOString() : null),
@@ -311,6 +341,12 @@ export default function StoreMenu() {
       setSuccessOrder(null);
       setActiveOrderId(null);
       setLiveStatus(null);
+      if (orderStorageKey) {
+        localStorage.removeItem(orderStorageKey);
+      }
+      if (expiryTimeoutRef.current) {
+        clearTimeout(expiryTimeoutRef.current);
+      }
     }
   };
 
@@ -404,7 +440,7 @@ export default function StoreMenu() {
 
     // ✅ حماية إضافية: منع PAYMOB لو مش enabled
     if (paymentMethod === 'PAYMOB' && !store?.paymob_enabled) {
-      notifyError(isAr ? 'PayMob غير متاح لهذا الفرع.' : 'PayMob is not available for this store.');
+      notifyError(isAr ? 'PayMob غير متاح لهذا الفرع.' : 'PayMob is not available for this الفرع.');
       setPaymentMethod('CASH');
       return;
     }
@@ -416,9 +452,10 @@ export default function StoreMenu() {
       const payload = {
         customer_name: customerName || null,
         customer_phone: customerPhone || null,
+        customer_email: customerEmail || null,
         notes,
         order_type: orderType,
-        payment_method: paymentMethod,
+        payment_method: paymentMethod,        
         delivery_address:
           orderType === 'DELIVERY' ? deliveryAddress.trim() : null,
         branch_id: selectedBranchId ? Number(selectedBranchId) : null,
@@ -437,6 +474,7 @@ export default function StoreMenu() {
       setActiveOrderId(res.data.id);
       setLiveStatus(res.data.status);
       lastAnnouncedStatusRef.current = res.data.status;
+      persistOrder(res.data, res.data.status, res.data.status);      
       if (res.data.invoice_number) {
         await loadInvoice(res.data.invoice_number);
       }
@@ -494,20 +532,109 @@ export default function StoreMenu() {
     [isAr]
   );
 
+  const loadPersistedOrder = useCallback(async () => {
+    if (!orderStorageKey) return;
+    try {
+      const raw = localStorage.getItem(orderStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.expiresAt || parsed.expiresAt < Date.now()) {
+        localStorage.removeItem(orderStorageKey);
+        return;
+      }
+      const remainingMs = parsed.expiresAt - Date.now();
+      if (remainingMs > 0) {
+        if (expiryTimeoutRef.current) {
+          clearTimeout(expiryTimeoutRef.current);
+        }
+        expiryTimeoutRef.current = setTimeout(() => {
+          localStorage.removeItem(orderStorageKey);
+          setSuccessOrder(null);
+          setActiveOrderId(null);
+          setLiveStatus(null);
+        }, remainingMs);
+      }
+
+      if (parsed.order?.id) {
+        setSuccessOrder(parsed.order);
+        setActiveOrderId(parsed.order.id);
+        setLiveStatus(parsed.status || parsed.order.status || null);
+        lastAnnouncedStatusRef.current =
+          parsed.lastAnnouncedStatus || parsed.order.status || null;
+
+        if (parsed.order.invoice_number) {
+          await loadInvoice(parsed.order.invoice_number);
+        }
+      }
+    } catch {
+      localStorage.removeItem(orderStorageKey);
+    }
+  }, [loadInvoice, orderStorageKey]);
+
+  const playTone = useCallback((frequency = 880) => {
+    try {
+      if (!audioContextRef.current) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        audioContextRef.current = new AudioCtx();
+      }
+
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      const oscillator = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = frequency;
+      gainNode.gain.value = 0.08;
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+      oscillator.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.4);
+    } catch (error) {
+      console.warn('Notification tone failed', error);
+    }
+  }, []);
+
+  const persistOrder = useCallback(
+    (order, status, lastAnnounced) => {
+      if (!order?.id || !orderStorageKey) return;
+      const payload = {
+        expiresAt: Date.now() + ORDER_STORAGE_TTL_MS,
+        order,
+        status: status || order.status || null,
+        lastAnnouncedStatus: lastAnnounced || order.status || null,
+      };
+      localStorage.setItem(orderStorageKey, JSON.stringify(payload));
+      if (expiryTimeoutRef.current) {
+        clearTimeout(expiryTimeoutRef.current);
+      }
+      expiryTimeoutRef.current = setTimeout(() => {
+        localStorage.removeItem(orderStorageKey);
+        setSuccessOrder(null);
+        setActiveOrderId(null);
+        setLiveStatus(null);
+      }, ORDER_STORAGE_TTL_MS);
+    },
+    [orderStorageKey, ORDER_STORAGE_TTL_MS]
+  );
+
   const handleKdsOrderEvent = useCallback(
     (order) => {
       if (!order || !activeOrderId || order.id !== activeOrderId) return;
       setLiveStatus(order.status);
-      setSuccessOrder((prev) =>
-        prev ? { ...prev, status: order.status, total: order.total ?? prev.total } : prev
-      );
+      const shouldAnnounce =
+        ['PREPARING', 'READY', 'SERVED', 'PAID'].includes(order.status) &&
+        lastAnnouncedStatusRef.current !== order.status;
 
       if (
-        ['PREPARING', 'READY', 'SERVED', 'PAID'].includes(order.status) &&
-        lastAnnouncedStatusRef.current !== order.status
+        shouldAnnounce
       ) {
         const phrase =
-          order.status === 'READY'
+          order.status === 'READY'          
             ? isAr
               ? 'طلبك جاهز للاستلام.'
               : 'Your order is ready.'
@@ -524,11 +651,19 @@ export default function StoreMenu() {
                   : 'Order served.';
 
         notifySuccess(phrase);
+        playTone(order.status === 'READY' ? 1200 : 880);
         speakStatus(phrase);
         lastAnnouncedStatusRef.current = order.status;
       }
+
+      setSuccessOrder((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, status: order.status, total: order.total ?? prev.total };
+        persistOrder(updated, order.status, lastAnnouncedStatusRef.current);
+        return updated;
+      });
     },
-    [activeOrderId, isAr, speakStatus]
+    [activeOrderId, isAr, persistOrder, playTone, speakStatus]
   );
 
   useEffect(() => {
@@ -761,8 +896,14 @@ export default function StoreMenu() {
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
               />
+              <input
+                type="email"
+                placeholder={isAr ? 'البريد الإلكتروني (اختياري)' : 'Email (optional)'}
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                className="text-sm border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+              />
             </div>
-
             {orderType === 'DELIVERY' && (
               <textarea
                 placeholder={isAr ? 'عنوان التوصيل بالتفصيل' : 'Delivery address (details)'}

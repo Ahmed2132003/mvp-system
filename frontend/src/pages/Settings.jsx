@@ -94,6 +94,8 @@ export default function SettingsPage() {
     service_charge: 0,
     printer_ip: '',
     printer_port: '',
+    notification_email: '',
+    notification_email_password: '',
     attendance_penalty_per_15min: 0,
   });
 
@@ -242,9 +244,11 @@ export default function SettingsPage() {
         service_charge: settingsRes.data.service_charge,
         printer_ip: settingsRes.data.printer_ip || '',
         printer_port: settingsRes.data.printer_port || '',
+        notification_email: settingsRes.data.notification_email || '',
+        notification_email_password: settingsRes.data.notification_email_password || '',
         attendance_penalty_per_15min: settingsRes.data.attendance_penalty_per_15min ?? 0,
       });
-      
+
       setLoyalty({
         is_active: loyaltyRes.data.is_active,
         points_per_egp: loyaltyRes.data.points_per_egp,
@@ -368,10 +372,16 @@ export default function SettingsPage() {
         printer_ip: storeSettings.printer_ip === '' ? null : storeSettings.printer_ip,
         printer_port:
           storeSettings.printer_port === '' ? null : Number(storeSettings.printer_port),
+        notification_email:
+          storeSettings.notification_email === '' ? null : storeSettings.notification_email,
+        notification_email_password:
+          storeSettings.notification_email_password === ''
+            ? null
+            : storeSettings.notification_email_password,
       };
 
       await api.patch('/store-settings/current/', payload);
-      
+
       showSuccess(isAr ? 'تم حفظ إعدادات الفرع بنجاح.' : 'Store settings saved successfully.');
       await fetchAll();
     } catch (err) {
@@ -1042,6 +1052,35 @@ export default function SettingsPage() {
                         </div>
                       </div>
 
+                      <div className="md:col-span-2 grid gap-3 md:grid-cols-2">
+                        <div>
+                          <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                            {isAr ? 'بريد إرسال إشعارات العملاء' : 'Customer notification email'}
+                          </label>
+                          <input
+                            type="email"
+                            name="notification_email"
+                            value={storeSettings.notification_email}
+                            onChange={handleStoreSettingsChange}
+                            className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                            placeholder="name@gmail.com"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                            {isAr ? 'App Password للإيميل' : 'Email app password'}
+                          </label>
+                          <input
+                            type="password"
+                            name="notification_email_password"
+                            value={storeSettings.notification_email_password}
+                            onChange={handleStoreSettingsChange}
+                            className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                            placeholder={isAr ? '••••••••' : '••••••••'}
+                          />
+                        </div>
+                      </div>
+                      
                       <div className="md:col-span-2 flex justify-end gap-2">
                         <button
                           type="submit"

@@ -191,6 +191,16 @@ export default function KDS() {
     document.documentElement.dir = isAr ? 'rtl' : 'ltr';
   }, [lang, isAr]);
 
+  useEffect(() => {
+    const resumeAudio = () => {
+      if (audioContextRef.current?.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+    };
+    window.addEventListener('pointerdown', resumeAudio, { once: true });
+    return () => window.removeEventListener('pointerdown', resumeAudio);
+  }, []);
+
   const toggleTheme = () => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   const setLanguage = (lng) => setLang(lng);
 
@@ -291,9 +301,12 @@ export default function KDS() {
       }
 
       const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
       const oscillator = ctx.createOscillator();
       const gainNode = ctx.createGain();
-
+      
       oscillator.type = 'sine';
       oscillator.frequency.value = frequency;
 
