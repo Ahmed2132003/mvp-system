@@ -11,6 +11,7 @@ from rest_framework.exceptions import ValidationError
 
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
+import logging
 from django.db.models import Q, Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -34,9 +35,11 @@ from .services.invoice import ensure_invoice_for_order
 # =======================
 # Helpers
 # =======================
+logger = logging.getLogger(__name__)
+
 def ensure_aware(dt):    
     if not dt:
-        return dt
+        return dt    
     if timezone.is_naive(dt):
         return timezone.make_aware(dt, timezone.get_current_timezone())
     return dt
@@ -136,7 +139,7 @@ class TableViewSet(viewsets.ModelViewSet):
         store = get_store_from_request(self.request)
         if not store:
             return Table.objects.none()
-
+        
         active_reservations = Prefetch(
             "reservations",
             queryset=Reservation.objects.filter(status__in=["PENDING", "CONFIRMED"]),
@@ -148,7 +151,14 @@ class TableViewSet(viewsets.ModelViewSet):
         if branch:
             qs = qs.filter(Q(branch=branch) | Q(branch__isnull=True))
         return qs.order_by("number")
-    
+
+    def list(self, request, *args, **kwargs):
+        try:
+            return super().list(request, *args, **kwargs)
+        except (ProgrammingError, OperationalError) as exc:
+            logger.exception("Table list DB error: %s", exc)
+            return Response([], status=200)
+            
     def perform_create(self, serializer):
         """
         ✅ حل نهائي لمشكلة:

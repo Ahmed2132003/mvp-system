@@ -1,4 +1,5 @@
 from rest_framework import viewsets, status
+import logging
 from django.db.models import Count
 from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import action
@@ -11,11 +12,14 @@ from .filters import CategoryFilter, ItemFilter, InventoryFilter
 from core.permissions import IsManager, IsEmployeeOfStore
 from core.utils.store_context import get_store_from_request, get_branch_from_request
 from django.db import transaction
+from django.db.utils import OperationalError, ProgrammingError
 from django.db.models import F
 
 from core.models import Employee
 
-class CategoryViewSet(viewsets.ModelViewSet):    
+logger = logging.getLogger(__name__)
+
+class CategoryViewSet(viewsets.ModelViewSet):          
     serializer_class = CategorySerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = CategoryFilter
@@ -35,7 +39,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         role = getattr(user, 'role', None)
-
+        
         qs = Category.objects.all()
 
         store = get_store_from_request(self.request)
@@ -58,6 +62,13 @@ class CategoryViewSet(viewsets.ModelViewSet):
         # نضيف عدد الأصناف في كل كاتيجوري
         return qs.annotate(items_count=Count('items'))
 
+    def list(self, request, *args, **kwargs):
+        try:
+            return super().list(request, *args, **kwargs)
+        except (ProgrammingError, OperationalError) as exc:
+            logger.exception("Category list DB error: %s", exc)
+            return Response([], status=200)
+        
     def perform_create(self, serializer):
         store = get_store_from_request(self.request)
         if not store:
@@ -86,7 +97,7 @@ class ItemViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         role = getattr(user, 'role', None)
-        
+                
         qs = Item.objects.all()
 
         try:
@@ -100,6 +111,13 @@ class ItemViewSet(viewsets.ModelViewSet):
             
         return qs
 
+    def list(self, request, *args, **kwargs):
+        try:
+            return super().list(request, *args, **kwargs)
+        except (ProgrammingError, OperationalError) as exc:
+            logger.exception("Item list DB error: %s", exc)
+            return Response([], status=200)
+        
     def perform_create(self, serializer):
         store = get_store_from_request(self.request)
         if not store:
@@ -130,8 +148,8 @@ class InventoryViewSet(viewsets.ModelViewSet):
         return [IsManager()]
 
     def get_queryset(self):
-        from .models import Inventory  # لتفادي أي circular imports غريبة
-
+        from .models import Inventory  # لتفادي أي circular imports غريبة␊
+        
         store = get_store_from_request(self.request)
         if not store:
             return Inventory.objects.none()
@@ -173,6 +191,13 @@ class InventoryViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    def list(self, request, *args, **kwargs):
+        try:
+            return super().list(request, *args, **kwargs)
+        except (ProgrammingError, OperationalError) as exc:
+            logger.exception("Inventory list DB error: %s", exc)
+            return Response([], status=200)
+        
     @action(detail=True, methods=['post'], url_path='adjust-stock')
     def adjust_stock(self, request, pk=None):
         """
