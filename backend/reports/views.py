@@ -1106,9 +1106,12 @@ def api_accounting(request):
 
         payroll_total = attendance_value_total + bonuses_total - penalties_total - advances_total
         
-        purchase_qs = InventoryMovement.objects.filter(movement_type="IN", change__gt=0, **purchase_filter).select_related(
-            "item"
-        )
+        purchase_qs = InventoryMovement.objects.filter(
+            movement_type="IN",
+            change__gt=0,
+            **purchase_filter,
+        ).select_related("item")
+                
         if store:
             purchase_qs = purchase_qs.filter(branch__store=store)
         if branch:
@@ -1132,6 +1135,28 @@ def api_accounting(request):
 
         purchase_cost_total = purchase_totals.get("cost_total") or Decimal("0")
         purchase_sale_total = purchase_totals.get("sale_total") or Decimal("0")
+        inventory_cost_total = Decimal("0")
+        inventory_sale_total = Decimal("0")
+        if store:
+            inventory_qs = Inventory.objects.select_related("item", "branch").for_store(store)
+            if branch:
+                inventory_qs = inventory_qs.filter(branch=branch)
+
+            inventory_totals = inventory_qs.with_value_totals().aggregate(
+                total_cost=Coalesce(
+                    Sum("total_cost_value"),
+                    Value(0),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+                total_sale=Coalesce(
+                    Sum("total_sale_value"),
+                    Value(0),
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )
+            inventory_cost_total = inventory_totals.get("total_cost") or Decimal("0")
+            inventory_sale_total = inventory_totals.get("total_sale") or Decimal("0")
+
 
         try:
             tax_rate = Decimal(store.settings.tax_rate)
@@ -1177,6 +1202,8 @@ def api_accounting(request):
                     "purchase_cost_total": float(purchase_cost_total),
                     "purchase_sale_value_total": float(purchase_sale_total),
                     "purchase_tax_total": float(purchase_tax_total),
+                    "current_cost_total": float(inventory_cost_total),
+                    "current_sale_value_total": float(inventory_sale_total),
                 },
                 "sales": {
                     "total_sales": float(total_sales),
@@ -1225,6 +1252,8 @@ def api_accounting(request):
                     "purchase_cost_total": 0.0,
                     "purchase_sale_value_total": 0.0,
                     "purchase_tax_total": 0.0,
+                    "current_cost_total": 0.0,
+                    "current_sale_value_total": 0.0,
                 },
                 "sales": {"total_sales": 0.0, "total_tax": 0.0},
                 "tax_rate": 0.0,                

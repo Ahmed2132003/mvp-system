@@ -252,6 +252,13 @@ export default function StoreMenu() {
     [branches, selectedBranchId]
   );
 
+  const workingHoursLabel = useMemo(() => {
+    if (!selectedBranch?.opening_time || !selectedBranch?.closing_time) return null;
+    return isAr
+      ? `مواعيد العمل من ${selectedBranch.opening_time} إلى ${selectedBranch.closing_time}`
+      : `Working hours: ${selectedBranch.opening_time} to ${selectedBranch.closing_time}`;
+  }, [selectedBranch, isAr]);
+
   const currentStatus = useMemo(
     () => liveStatus || successOrder?.status || null,
     [liveStatus, successOrder]
@@ -744,11 +751,16 @@ export default function StoreMenu() {
                     {store.address}
                   </p>
                 )}
+                {workingHoursLabel && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-100">
+                    {workingHoursLabel}
+                  </span>
+                )}
                 {selectedBranch && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-100">
                     {isAr ? `الفرع: ${selectedBranch.name}` : `Branch: ${selectedBranch.name}`}
                   </span>
-                )}
+                )}                
               </div>
             </div>
           </div>

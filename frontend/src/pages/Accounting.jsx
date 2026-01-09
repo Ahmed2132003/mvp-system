@@ -257,9 +257,9 @@ export default function Accounting() {
         value: expenses.payroll ?? payroll.payroll_total ?? 0,
       },
       {
-        label: isAr ? 'مشتريات المخزون (قيمة شراء)' : 'Inventory purchases (cost)',
-        value: inventory.purchase_cost_total ?? 0,
-      },
+        label: isAr ? 'قيمة المخزون الحالية (قيمة شراء)' : 'Current inventory value (cost)',
+        value: inventory.current_cost_total ?? inventory.purchase_cost_total ?? 0,
+      },      
       { label: isAr ? 'إجمالي المبيعات' : 'Total sales', value: sales.total_sales ?? 0 },
       { label: isAr ? 'إجمالي المصروفات' : 'Total expenses', value: expenses.total ?? 0 },
       { label: isAr ? 'صافي الربح' : 'Net profit', value: profit.net_profit ?? 0 },
@@ -620,15 +620,17 @@ export default function Accounting() {
                       <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
                         <span>{isAr ? 'قيمة شراء الأصناف' : 'Purchase cost total'}</span>
                         <span className="font-semibold text-gray-900 dark:text-gray-100">
-                          {fmtMoney(inventory.purchase_cost_total)}
+                          {fmtMoney(inventory.current_cost_total ?? inventory.purchase_cost_total)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
                         <span>{isAr ? 'قيمة البيع المتوقعة' : 'Expected sale value'}</span>
                         <span className="font-semibold text-gray-900 dark:text-gray-100">
-                          {fmtMoney(inventory.purchase_sale_value_total)}
+                          {fmtMoney(
+                            inventory.current_sale_value_total ?? inventory.purchase_sale_value_total
+                          )}
                         </span>
-                      </div>
+                      </div>                      
                     </div>
                   </div>
 

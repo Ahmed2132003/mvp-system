@@ -667,12 +667,14 @@ class PublicStoreMenuView(APIView):
         store = get_object_or_404(Store, pk=store_id)
         branch_id = request.query_params.get("branch_id") or request.query_params.get("branch")
         branch = select_branch_for_store(store, branch_id)
+        def format_time(value):
+            return value.strftime("%H:%M") if value else None
 
         items_qs = Item.objects.filter(
             store=store,
             is_active=True,            
         ).select_related("category")
-        
+                
         items_data = []
         for item in items_qs:
             items_data.append(
@@ -696,14 +698,28 @@ class PublicStoreMenuView(APIView):
                 "phone": store.phone,
                 "paymob_enabled": paymob_enabled,  # ✅ جديد
             },
-            "branch": {"id": branch.id, "name": branch.name} if branch else None,
+            "branch": (
+                {
+                    "id": branch.id,
+                    "name": branch.name,
+                    "opening_time": format_time(branch.opening_time),
+                    "closing_time": format_time(branch.closing_time),
+                }
+                if branch
+                else None
+            ),
             "branches": [
-                {"id": b.id, "name": b.name}
+                {
+                    "id": b.id,
+                    "name": b.name,
+                    "opening_time": format_time(b.opening_time),
+                    "closing_time": format_time(b.closing_time),
+                }
                 for b in store.branches.filter(is_active=True).order_by("name")
             ],
             "trending_items": trending_items_for_store(store, branch=branch),            
             "items": items_data,
-        }
+        }        
         return Response(data, status=status.HTTP_200_OK)
     
 

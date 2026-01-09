@@ -128,7 +128,9 @@ export default function SettingsPage() {
     address: '',
     is_active: true,
     attendance_penalty_per_15min: '',
-  });
+    opening_time: '',
+    closing_time: '',
+  });  
   const storeMenuUrl = useMemo(
     () => (store?.id ? `${window.location.origin}/store/${store.id}/menu` : ''),
     [store]
@@ -284,6 +286,8 @@ export default function SettingsPage() {
         address: '',
         is_active: true,
         attendance_penalty_per_15min: '',
+        opening_time: '',
+        closing_time: '',
       });
       return;
     }
@@ -294,6 +298,8 @@ export default function SettingsPage() {
       address: selectedBranch.address || '',
       is_active: selectedBranch.is_active ?? true,
       attendance_penalty_per_15min: selectedBranch.attendance_penalty_per_15min ?? '',
+      opening_time: selectedBranch.opening_time || '',
+      closing_time: selectedBranch.closing_time || '',
     });
   }, [selectedBranch]);
 
@@ -462,6 +468,8 @@ export default function SettingsPage() {
         phone: branchForm.phone,
         address: branchForm.address,
         is_active: branchForm.is_active,
+        opening_time: branchForm.opening_time || null,
+        closing_time: branchForm.closing_time || null,
         attendance_penalty_per_15min:
           branchForm.attendance_penalty_per_15min === ''
             ? null
@@ -1174,10 +1182,34 @@ export default function SettingsPage() {
                                 step="0.01"
                               />
                             </div>                            
+                            <div>
+                              <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                                {isAr ? 'مواعيد الفتح' : 'Opening time'}
+                              </label>
+                              <input
+                                type="time"
+                                name="opening_time"
+                                value={branchForm.opening_time}
+                                onChange={handleBranchChange}
+                                className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
+                                {isAr ? 'مواعيد الإغلاق' : 'Closing time'}
+                              </label>
+                              <input
+                                type="time"
+                                name="closing_time"
+                                value={branchForm.closing_time}
+                                onChange={handleBranchChange}
+                                className="w-full text-sm border border-gray-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-gray-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-primary/40 dark:text-gray-100"
+                              />
+                            </div>
                             <div className="md:col-span-2">
                               <label className="block text-[11px] text-gray-600 dark:text-gray-300 mb-1">
                                 {isAr ? 'العنوان' : 'Address'}
-                              </label>
+                              </label>                              
                               <textarea
                                 name="address"
                                 rows={2}

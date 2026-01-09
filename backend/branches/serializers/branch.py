@@ -20,8 +20,10 @@ class BranchSerializer(serializers.ModelSerializer):
             'is_active',
             'qr_menu',
             'qr_menu_base64',
+            'opening_time',
+            'closing_time',
             'attendance_penalty_per_15min',
-        ]        
+        ]                   
         read_only_fields = ['store']  # الموظف ما يغيّرش المتجر من هنا
         
     # اختياري: لو عايز تمنع إنشاء فرع من غير store (للـ create)
