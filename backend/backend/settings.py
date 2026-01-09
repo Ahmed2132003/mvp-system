@@ -84,7 +84,11 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 ASGI_APPLICATION = 'backend.asgi.application'
 
 # ✅ Channels layer (هنستخدم نفس redis بتاع Celery)
-REDIS_URL = config("REDIS_URL", default=config("CELERY_BROKER_URL", default=""))
+REDIS_URL = config(
+    "REDIS_URL",
+    default=config("CELERY_BROKER_URL", default="redis://127.0.0.1:6379/0")
+)
+
 if REDIS_URL:
     CHANNEL_LAYERS = {
         "default": {
@@ -210,7 +214,7 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Celery Configuration
-CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://redis:6379/0')
+CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://127.0.0.1:6379/0')
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
