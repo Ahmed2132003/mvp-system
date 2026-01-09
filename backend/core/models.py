@@ -573,18 +573,14 @@ class EmployeeLedger(models.Model):
 @receiver(post_save, sender=User)
 def create_employee_profile(sender, instance, created, **kwargs):
     """
-    - OWNER: يتفعل مباشرة (ولا ننشئ Employee تلقائيًا)
+    - OWNER: لا ننشئ Employee تلقائيًا
     - STAFF/MANAGER: Employee ينشأ فقط من RegisterUserSerializer/Admin (علشان store إجباري)
     """
     if not created:
         return
-
     if instance.role == User.RoleChoices.OWNER:
-        if not instance.is_active:
-            instance.is_active = True
-            instance.save(update_fields=["is_active"])
         return
-
+    
 
 @receiver(post_save, sender=Store)
 def create_store_settings(sender, instance, created, **kwargs):
