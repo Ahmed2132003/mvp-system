@@ -14,6 +14,10 @@ export default function CreateUser() {
     role: 'STAFF',
     password: '',
     store_id: null, // ✅ جديد
+    create_store: false,
+    store_name: '',
+    store_address: '',
+    store_phone: '',
   });
 
   const [stores, setStores] = useState([]); // ✅ جديد
@@ -48,21 +52,32 @@ export default function CreateUser() {
     return [];
   }, [user]);
 
+  const canCreateStore = useMemo(
+    () => Boolean(user?.is_superuser && ['OWNER', 'MANAGER'].includes(formData.role)),
+    [user, formData.role],
+  );
+
+  const mustPickExistingStore = useMemo(() => {
+    if (user?.is_superuser) return formData.role === 'STAFF';
+    if (user?.role === 'OWNER') return formData.role !== 'OWNER';
+    return false;
+  }, [user, formData.role]);
+
   // ✅ هل store_id مطلوب؟
   const storeRequired = useMemo(() => {
-    if (user?.is_superuser) return formData.role !== 'OWNER';
+    if (user?.is_superuser) return formData.role === 'STAFF' || (formData.role !== 'OWNER' && !formData.create_store);
     if (user?.role === 'OWNER') return formData.role !== 'OWNER';
     return false; // MANAGER: مش مطلوب (بياخده تلقائيًا)
-  }, [user, formData.role]);
+  }, [user, formData.role, formData.create_store]);
 
   // ✅ تحميل الفروع (بدون eslint-disable)
   const fetchStores = useCallback(async () => {
-    if (!storeRequired) return;
+    if (!storeRequired && !canCreateStore && !mustPickExistingStore) return;
 
     setStoresLoading(true);
     try {
       const res = await api.get('/stores/');
-      
+
       const results = Array.isArray(res.data) ? res.data : res.data.results || [];
       setStores(results);
     } catch (e) {
@@ -75,7 +90,7 @@ export default function CreateUser() {
     } finally {
       setStoresLoading(false);
     }
-  }, [storeRequired, isAr]);
+  }, [storeRequired, canCreateStore, mustPickExistingStore, isAr]);
 
   useEffect(() => {
     fetchStores();
@@ -86,7 +101,16 @@ export default function CreateUser() {
     if (!storeRequired) {
       setFormData((prev) => ({ ...prev, store_id: null }));
     }
-  }, [storeRequired]);
+    if (!canCreateStore) {
+      setFormData((prev) => ({
+        ...prev,
+        create_store: false,
+        store_name: '',
+        store_address: '',
+        store_phone: '',
+      }));
+    }
+  }, [storeRequired, canCreateStore]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -103,8 +127,22 @@ export default function CreateUser() {
         return;
       }
 
+      if (canCreateStore && formData.create_store && !formData.store_name.trim()) {
+        const msg = isAr ? 'يجب إدخال اسم الفرع الجديد.' : 'Please enter a store name.';
+        setError(msg);
+        notifyError(msg);
+        setLoading(false);
+        return;
+      }
+
       const payload = { ...formData };
       if (!payload.store_id) delete payload.store_id;
+      if (!payload.create_store) {
+        delete payload.create_store;
+        delete payload.store_name;
+        delete payload.store_address;
+        delete payload.store_phone;
+      }
 
       const response = await api.post('/users/create/', payload);
 
@@ -125,7 +163,11 @@ export default function CreateUser() {
         role: 'STAFF',
         password: '',
         store_id: null,
-      });
+        create_store: false,
+        store_name: '',
+        store_address: '',
+        store_phone: '',
+      });      
     } catch (err) {
       const fallbackMsg = isAr ? 'حدث خطأ أثناء إنشاء الحساب' : 'An error occurred while creating the account';
 
@@ -321,11 +363,130 @@ export default function CreateUser() {
                 </select>
               </div>
 
-              {storeRequired && (
+              {canCreateStore && (
+                <div className="space-y-4 rounded-2xl border border-dashed border-gray-300 p-4 dark:border-slate-700">
+                  <div>
+                    <label className="block text-xs font-semibold mb-2 text-gray-700 dark:text-gray-200">
+                      {isAr ? 'إعداد الفرع' : 'Store setup'}
+                    </label>
+                    <div className="flex flex-col gap-2 text-sm text-gray-700 dark:text-gray-200">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="store-option"
+                          checked={!formData.create_store}
+                          onChange={() =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              create_store: false,
+                              store_name: '',
+                              store_address: '',
+                              store_phone: '',
+                            }))
+                          }
+                          disabled={loading}
+                        />
+                        {isAr ? 'اختيار فرع موجود' : 'Select existing store'}
+                      </label>
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="store-option"
+                          checked={formData.create_store}
+                          onChange={() => setFormData((prev) => ({ ...prev, create_store: true, store_id: null }))}
+                          disabled={loading}
+                        />
+                        {isAr ? 'إنشاء فرع جديد' : 'Create new store'}
+                      </label>
+                    </div>
+                  </div>
+
+                  {!formData.create_store && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1 text-gray-700 dark:text-gray-200">
+                        {isAr ? 'اختر الفرع (Store)' : 'Select Store (Branch)'}
+                      </label>
+                      <select
+                        value={formData.store_id ?? ''}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            store_id: e.target.value ? Number(e.target.value) : null,
+                          })
+                        }
+                        disabled={loading || storesLoading}
+                        className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border-2 border-gray-300 focus:border-primary outline-none transition disabled:bg-gray-100 dark:bg-slate-950 dark:border-slate-700 dark:text-gray-100 dark:focus:border-blue-400"
+                      >
+                        <option value="">
+                          {storesLoading
+                            ? isAr
+                              ? 'جاري تحميل الفروع...'
+                              : 'Loading stores...'
+                            : isAr
+                            ? 'اختر فرع'
+                            : 'Choose a store'}
+                        </option>
+                        {stores.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} {s.address ? `— ${s.address}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {formData.create_store && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold mb-1 text-gray-700 dark:text-gray-200">
+                          {isAr ? 'اسم الفرع الجديد' : 'New store name'}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={isAr ? 'مثال: فرع الزمالك' : 'e.g. Zamalek branch'}
+                          value={formData.store_name}
+                          onChange={(e) => setFormData({ ...formData, store_name: e.target.value })}
+                          required={formData.create_store}
+                          disabled={loading}
+                          className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border-2 border-gray-300 focus:border-primary outline-none transition disabled:bg-gray-100 dark:bg-slate-950 dark:border-slate-700 dark:text-gray-100 dark:focus:border-blue-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1 text-gray-700 dark:text-gray-200">
+                          {isAr ? 'العنوان (اختياري)' : 'Address (optional)'}
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={isAr ? 'اكتب عنوان الفرع' : 'Enter store address'}
+                          value={formData.store_address}
+                          onChange={(e) => setFormData({ ...formData, store_address: e.target.value })}
+                          disabled={loading}
+                          className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border-2 border-gray-300 focus:border-primary outline-none transition disabled:bg-gray-100 dark:bg-slate-950 dark:border-slate-700 dark:text-gray-100 dark:focus:border-blue-400"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold mb-1 text-gray-700 dark:text-gray-200">
+                          {isAr ? 'رقم الهاتف (اختياري)' : 'Phone (optional)'}
+                        </label>
+                        <input
+                          type="tel"
+                          placeholder={isAr ? 'مثال: 01000000000' : 'e.g. 01000000000'}
+                          value={formData.store_phone}
+                          onChange={(e) => setFormData({ ...formData, store_phone: e.target.value })}
+                          disabled={loading}
+                          className="w-full px-4 md:px-6 py-3 md:py-4 rounded-xl border-2 border-gray-300 focus:border-primary outline-none transition disabled:bg-gray-100 dark:bg-slate-950 dark:border-slate-700 dark:text-gray-100 dark:focus:border-blue-400"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {storeRequired && !canCreateStore && (
                 <div>
                   <label className="block text-xs font-semibold mb-1 text-gray-700 dark:text-gray-200">
                     {isAr ? 'اختر الفرع (Store)' : 'Select Store (Branch)'}
-                  </label>
+                  </label>                  
                   <select
                     value={formData.store_id ?? ''}
                     onChange={(e) =>
