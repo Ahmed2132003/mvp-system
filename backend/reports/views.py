@@ -88,24 +88,38 @@ def api_reports(request):
     - أصناف قليلة في المخزون
     """
     try:
+        user = request.user
+        store = None
+        if user.is_superuser:
+            if request.query_params.get("store_id"):
+                store = get_store_from_request(request)
+        else:
+            store = get_store_from_request(request)
+            if not store:
+                return Response(_empty_summary())
+            
         today = timezone.now().date()
         week_ago = today - timedelta(days=7)
         month_ago = today - timedelta(days=30)
 
         paid_filter = Q(status='PAID') | Q(is_paid=True)
+        order_qs = Order.objects.filter(paid_filter)
+        if store:
+            order_qs = order_qs.filter(store=store)
+
 
         # مبيعات اليوم / الأسبوع / الشهر (طلبات مدفوعة فقط)
-        daily_qs = Order.objects.filter(created_at__date=today).filter(paid_filter)
-        weekly_qs = Order.objects.filter(created_at__date__gte=week_ago).filter(paid_filter)
-        monthly_qs = Order.objects.filter(created_at__date__gte=month_ago).filter(paid_filter)
-
+        daily_qs = order_qs.filter(created_at__date=today)
+        weekly_qs = order_qs.filter(created_at__date__gte=week_ago)
+        monthly_qs = order_qs.filter(created_at__date__gte=month_ago)
+        
         daily = daily_qs.aggregate(total=Sum('total'))['total'] or 0
         weekly = weekly_qs.aggregate(total=Sum('total'))['total'] or 0
         monthly = monthly_qs.aggregate(total=Sum('total'))['total'] or 0
 
         daily_orders_count = daily_qs.count()
-        total_orders = Order.objects.filter(paid_filter).count()
-
+        total_orders = order_qs.count()
+        
         avg_ticket = daily / daily_orders_count if daily_orders_count > 0 else 0
 
         # مبيعات اليوم موزعة على الساعات
@@ -128,8 +142,11 @@ def api_reports(request):
         # أصناف قليلة في المخزون
         low_stock_qs = Inventory.objects.filter(
             quantity__lt=F('min_stock')
-        ).select_related('item', 'branch')
-
+        )
+        if store:
+            low_stock_qs = low_stock_qs.for_store(store)
+        low_stock_qs = low_stock_qs.select_related('item', 'branch')
+        
         low_stock_list = [
             {
                 'item': inv.item.name,
@@ -144,6 +161,11 @@ def api_reports(request):
         top_items_qs = (
             OrderItem.objects
             .filter(Q(order__status='PAID') | Q(order__is_paid=True))
+        )
+        if store:
+            top_items_qs = top_items_qs.filter(order__store=store)
+        top_items_qs = (
+            top_items_qs
             .values('item__name')
             .annotate(total_sold=Sum('quantity'))
             .order_by('-total_sold')[:5]
@@ -194,21 +216,21 @@ def sales_report(request):
     """
     try:
         user = request.user
-        role = getattr(user, "role", None)
 
         # أساس الكويري: طلبات مدفوعة فقط
         qs = Order.objects.filter(status='PAID')
 
-        # تقييد حسب المتجر لو المستخدم Employee
-        employee = getattr(user, "employee", None)
-        if employee and getattr(employee, "store_id", None):
-            qs = qs.filter(store=employee.store)
-        elif role == "OWNER":
-            # صاحب السيستم/المتجر → يشوف الكل (أو نقدر نفلتر بـ store_id من query params لو حبيت بعدين)
-            pass
+        store = None
+        if user.is_superuser:
+            if request.query_params.get("store_id"):
+                store = get_store_from_request(request)
         else:
-            qs = qs.none()
+            store = get_store_from_request(request)
+            if not store:
+                qs = qs.none()
 
+        if store:
+            qs = qs.filter(store=store)
         # --- فلترة التاريخ ---
         today = timezone.now().date()
         default_from = today - timedelta(days=30)

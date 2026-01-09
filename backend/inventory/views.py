@@ -95,22 +95,12 @@ class ItemViewSet(viewsets.ModelViewSet):
         return [IsManager()]
 
     def get_queryset(self):
-        user = self.request.user
-        role = getattr(user, 'role', None)
-                
-        qs = Item.objects.all()
+        store = get_store_from_request(self.request)
+        if not store:
+            return Item.objects.none()
 
-        try:
-            if user.employee and getattr(user.employee, 'store', None):
-                qs = qs.filter(store=user.employee.store)
-            elif role != 'OWNER':
-                return Item.objects.none()
-        except (AttributeError, Employee.DoesNotExist):
-            if role != 'OWNER':
-                return Item.objects.none()
-            
-        return qs
-
+        return Item.objects.filter(store=store)
+    
     def list(self, request, *args, **kwargs):
         try:
             return super().list(request, *args, **kwargs)
